@@ -1,6 +1,7 @@
 #include "NetworkManager.h"
 #include "AppManager.h"
 #include "DeviceLog.h"
+#include "ProviderUsage.h"
 #include "VariableStore.h"
 #include <ArduinoJson.h>
 #include <time.h>
@@ -18,15 +19,15 @@ button,input,select{font:inherit;border-radius:7px;border:1px solid #45475a;padd
 button{background:#89b4fa;color:#11111b;border:0;font-weight:700;cursor:pointer;margin:4px 3px 4px 0}
 button.secondary{background:#45475a;color:#cdd6f4}button.danger{background:#f38ba8}
 input,select{width:100%;box-sizing:border-box;margin:4px 0 8px}.row{display:flex;gap:10px;align-items:center;border-bottom:1px solid #313244;padding:9px 0}
-.row:last-child{border-bottom:0}.row label{flex:1}.order{width:64px}.muted{color:#a6adc8;font-size:13px}.ok{color:#a6e3a1}.error{color:#f38ba8}
+.row:last-child{border-bottom:0}.row label{flex:1}.row.deleted label{text-decoration:line-through;opacity:.6}.order{width:64px}.remove{background:#45475a;color:#cdd6f4;white-space:nowrap}.muted{color:#a6adc8;font-size:13px}.ok{color:#a6e3a1}.error{color:#f38ba8}
 a{color:#89dceb}.pill{padding:4px 8px;border-radius:12px;background:#313244;font-size:12px}
 </style></head><body><header><h1>CYD Smart Display</h1><span id="status" class="pill">carregando</span></header>
 <section><h2>Wi‑Fi</h2><button id="scan" class="secondary">Procurar redes</button>
 <select id="ssid"><option value="">Selecione uma rede</option></select>
 <input id="password" type="password" placeholder="Senha da rede">
 <button id="connect">Conectar</button><p id="wifi-msg" class="muted"></p></section>
-<section><h2>Cards do carrossel</h2><p class="muted">Marque os cards ativos e defina a ordem. As alterações reiniciam o dispositivo.</p>
-<div id="cards"></div><button id="save-cards">Salvar cards e reiniciar</button>
+<section><h2>Cards do carrossel</h2><p class="muted">Ative, ordene ou exclua cards. “Excluir” remove do carrossel e pode ser desfeito por “Restaurar”. Pelo menos um card precisa permanecer ativo. As alterações reiniciam o dispositivo.</p>
+<div id="cards"></div><p class="muted">Cards de Gemini, ChatGPT e Claude usam as variáveis PROVIDER_USAGE_PERCENT, PROVIDER_TOKENS e PROVIDER_REQUESTS (por exemplo, GEMINI_USAGE_PERCENT).</p><button id="save-cards">Salvar cards e reiniciar</button>
 <button id="export" class="secondary">Exportar JSON</button>
 <input id="import" type="file" accept="application/json"><button id="import-btn" class="secondary">Importar JSON</button>
 <p id="card-msg" class="muted"></p></section>
@@ -40,11 +41,11 @@ const $=id=>document.getElementById(id);let config=null;
 async function api(url,opt={}){const r=await fetch(url,opt);const t=await r.text();let d;try{d=JSON.parse(t)}catch{d={raw:t}}if(!r.ok)throw Error(d.error||t||r.status);return d}
 function message(id,text,error=false){$(id).textContent=text;$(id).className=error?'error':'muted'}
 async function load(){try{const [s,c,v]=await Promise.all([api('/api/status'),api('/api/config'),api('/api/variables')]);$('status').textContent=s.connected?'Wi‑Fi '+s.ip:'Offline';config=c;renderCards();renderVars(v.variables)}catch(e){message('card-msg',e.message,true)}}
-function renderCards(){const host=$('cards');host.textContent='';(config.cards||[]).forEach(c=>{const row=document.createElement('div');row.className='row';row.dataset.id=c.id;const check=document.createElement('input');check.type='checkbox';check.checked=!!c.enabled;check.style.width='auto';const label=document.createElement('label');label.textContent=(c.title||c.id)+' · '+c.id;const order=document.createElement('input');order.type='number';order.min=0;order.max=7;order.value=c.order;order.className='order';row.append(check,label,order);host.append(row)})}
+function renderCards(){const host=$('cards');host.textContent='';(config.cards||[]).forEach(c=>{const row=document.createElement('div');row.className='row';row.dataset.id=c.id;row.dataset.deleted=c.deleted?'1':'0';const check=document.createElement('input');check.type='checkbox';check.checked=!!c.enabled&&!c.deleted;check.disabled=!!c.deleted;check.style.width='auto';const label=document.createElement('label');label.textContent=(c.title||c.id)+' · '+c.id;const order=document.createElement('input');order.type='number';order.min=0;order.max=7;order.value=c.order;order.className='order';const remove=document.createElement('button');remove.className='remove';remove.textContent=c.deleted?'Restaurar':'Excluir';remove.onclick=()=>{const deleted=row.dataset.deleted!=='1';row.dataset.deleted=deleted?'1':'0';check.disabled=deleted;check.checked=!deleted;remove.textContent=deleted?'Restaurar':'Excluir';row.classList.toggle('deleted',deleted)};row.classList.toggle('deleted',!!c.deleted);row.append(check,label,order,remove);host.append(row)})}
 function renderVars(vars){const host=$('variables');host.textContent='';vars.forEach(v=>{const p=document.createElement('p');p.textContent=v.name+' · '+(v.secret?'secreta':'texto')+' · '+(v.configured?'configurada':'vazia');host.append(p)})}
 async function scan(){try{message('wifi-msg','procurando...');await api('/api/wifi/scan',{method:'POST'});let attempts=0;const timer=setInterval(async()=>{try{const d=await api('/api/wifi/scan');if(d.pending)return;clearInterval(timer);$('ssid').textContent='';(d.networks||[]).forEach(n=>{const o=document.createElement('option');o.value=n.ssid;o.textContent=n.ssid+' ('+n.rssi+' dBm)';$('ssid').append(o)});message('wifi-msg',d.failed?'Falha no scan':(d.networks.length+' redes encontradas'),d.failed)}catch(e){attempts++;if(attempts>20){clearInterval(timer);message('wifi-msg','tempo esgotado ao consultar o scan',true)}else message('wifi-msg','rádio procurando...')}} ,600)}catch(e){message('wifi-msg',e.message,true)}}
 async function connect(){try{await api('/api/wifi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ssid:$('ssid').value,password:$('password').value})});message('wifi-msg','conectando...')}catch(e){message('wifi-msg',e.message,true)}}
-async function saveCards(){try{const rows=[...document.querySelectorAll('.row')];const cards=rows.map(r=>{const c=config.cards.find(x=>x.id===r.dataset.id);return {...c,enabled:r.querySelector('input[type=checkbox]').checked,order:Number(r.querySelector('.order').value)}});await api('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cards})});message('card-msg','salvo; reiniciando...')}catch(e){message('card-msg',e.message,true)}}
+async function saveCards(){try{const rows=[...document.querySelectorAll('#cards .row')];const cards=rows.map(r=>{const c=config.cards.find(x=>x.id===r.dataset.id);const deleted=r.dataset.deleted==='1';return {...c,deleted,enabled:!deleted&&r.querySelector('input[type=checkbox]').checked,order:Number(r.querySelector('.order').value)}});await api('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cards})});message('card-msg','salvo; reiniciando...')}catch(e){message('card-msg',e.message,true)}}
 function exportConfig(){const blob=new Blob([JSON.stringify(config,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='cyd-cards.json';a.click();URL.revokeObjectURL(a.href)}
 async function importConfig(){const f=$('import').files[0];if(!f)return message('card-msg','selecione um JSON',true);try{const d=JSON.parse(await f.text());await api('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});message('card-msg','JSON salvo; reiniciando...')}catch(e){message('card-msg',e.message,true)}}
 async function saveVar(){try{await api('/api/variables',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:$('var-name').value,value:$('var-value').value,secret:$('var-secret').checked})});message('var-msg','variável salva');$('var-value').value='';load()}catch(e){message('var-msg',e.message,true)}}
@@ -52,10 +53,9 @@ $('scan').onclick=scan;$('connect').onclick=connect;$('save-cards').onclick=save
 </script></body></html>
 )HTML";
 
-static const char API_SCHEMA[] PROGMEM = R"JSON({"name":"cyd-smart-display","version":1,"endpoints":{"config":{"get":"GET /api/config","save":"POST /api/config","body":{"cards":[{"id":"gemini_usage|clock_system","enabled":true,"order":0,"variables":["GEMINI_API_KEY"],"template":"{{GEMINI_API_KEY}}"}]}},"variables":{"list":"GET /api/variables","upsert":"POST /api/variables","body":{"name":"A_Z_NAME","value":"secret-or-text","secret":true}},"wifi":{"scan_start":"POST /api/wifi/scan","scan_poll":"GET /api/wifi/scan","connect":"POST /api/wifi"}},"rules":{"variable_name":"^[A-Za-z0-9_]{1,32}$","max_variables":16,"max_value_length":512,"secret_values_never_returned":true,"card_changes_require_restart":true},"templates":"Use {{VARIABLE_NAME}} in card template fields; runtime consumers should resolve them through VariableStore."})JSON";
+static const char API_SCHEMA[] PROGMEM = R"JSON({"name":"cyd-smart-display","version":1,"endpoints":{"config":{"get":"GET /api/config","save":"POST /api/config","body":{"cards":[{"id":"gemini_usage|chatgpt_usage|claude_usage|clock_system","enabled":true,"deleted":false,"order":0,"variables":["GEMINI_USAGE_PERCENT","GEMINI_TOKENS","GEMINI_REQUESTS"],"template":"{{GEMINI_USAGE_PERCENT}}"}]}},"usage":{"push":"POST /api/usage","body":{"provider":"gemini|chatgpt|claude","session_percent":45,"weekly_percent":28,"tokens":"120k","requests":"340","session_reset_minutes":120,"weekly_reset_minutes":7200,"status":"ok","ok":true}},"variables":{"list":"GET /api/variables","upsert":"POST /api/variables","body":{"name":"A_Z_NAME","value":"secret-or-text","secret":true}},"wifi":{"scan_start":"POST /api/wifi/scan","scan_poll":"GET /api/wifi/scan","connect":"POST /api/wifi"}},"rules":{"variable_name":"^[A-Za-z0-9_]{1,32}$","max_variables":16,"max_value_length":512,"secret_values_never_returned":true,"card_changes_require_restart":true,"at_least_one_enabled_card":true,"deleted_cards_are_tombstones":true},"provider_cards":{"gemini":["GEMINI_USAGE_PERCENT","GEMINI_WEEKLY_PERCENT","GEMINI_TOKENS","GEMINI_REQUESTS"],"chatgpt":["CHATGPT_USAGE_PERCENT","CHATGPT_WEEKLY_PERCENT","CHATGPT_TOKENS","CHATGPT_REQUESTS"],"claude":["CLAUDE_USAGE_PERCENT","CLAUDE_WEEKLY_PERCENT","CLAUDE_TOKENS","CLAUDE_REQUESTS"]},"templates":"Use {{VARIABLE_NAME}} in card template fields; runtime consumers should resolve them through VariableStore."})JSON";
 
 void NetworkManager::begin(const char* ssid, const char* password) {
-    VariableStore::getInstance().begin();
     _preferences.begin("wifi", false);
     WiFi.mode(WIFI_STA);
 
@@ -154,6 +154,44 @@ void NetworkManager::begin(const char* ssid, const char* password) {
             return;
         }
         _webServer.send(200, "application/json", "{\"saved\":true}");
+    });
+
+    // Host-side collectors (for example a Mac agent) push normalized usage
+    // snapshots here. The payload stays in RAM: provider data changes often
+    // and must not cause flash writes on every poll.
+    _webServer.on("/api/usage", HTTP_POST, [this]() {
+        if (!_webServer.hasArg("plain") || _webServer.arg("plain").length() > 1024) {
+            _webServer.send(413, "application/json", "{\"error\":\"usage request too large\"}");
+            return;
+        }
+
+        JsonDocument doc;
+        if (deserializeJson(doc, _webServer.arg("plain")) != DeserializationError::Ok) {
+            _webServer.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+            return;
+        }
+
+        const char* provider = doc["provider"] | "";
+        ProviderUsage usage;
+        usage.ok = doc["ok"] | true;
+        usage.sessionPercent = constrain(doc["session_percent"] | (doc["s"] | 0), 0, 100);
+        usage.weeklyPercent = constrain(doc["weekly_percent"] | (doc["w"] | 0), 0, 100);
+        usage.sessionResetMinutes = max(0, doc["session_reset_minutes"] | (doc["sr"] | 0));
+        usage.weeklyResetMinutes = max(0, doc["weekly_reset_minutes"] | (doc["wr"] | 0));
+        usage.status = String(doc["status"] | (doc["st"] | ""));
+
+        if (doc["tokens"].is<const char*>()) usage.tokens = doc["tokens"].as<const char*>();
+        else usage.tokens = String(static_cast<unsigned long>(doc["tokens"] | 0));
+        if (doc["requests"].is<const char*>()) usage.requests = doc["requests"].as<const char*>();
+        else usage.requests = String(static_cast<unsigned long>(doc["requests"] | 0));
+
+        if (!ProviderUsageStore::getInstance().update(provider, usage)) {
+            _webServer.send(400, "application/json", "{\"error\":\"unsupported provider\"}");
+            return;
+        }
+        LOG_INFO("Usage updated provider=%s session=%d weekly=%d", provider,
+                 usage.sessionPercent, usage.weeklyPercent);
+        _webServer.send(200, "application/json", "{\"accepted\":true}");
     });
 
     _webServer.on("/api/wifi", HTTP_POST, [this]() {

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "chatgpt_usage",
+  "title": "ChatGPT",
+  "kind": "built-in",
+  "source": "src/apps/ChatGPTUsageApp.h",
+  "provider": "openai",
+  "requiredVariables": ["CHATGPT_USAGE_PERCENT", "CHATGPT_WEEKLY_PERCENT", "CHATGPT_TOKENS", "CHATGPT_REQUESTS"],
+  "usagePushProvider": "chatgpt",
+  "boards": ["esp32-cyd", "esp32-s3-jc3248w535"]
+}

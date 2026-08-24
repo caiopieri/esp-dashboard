@@ -40,6 +40,7 @@ O painel permite:
 
 - escanear e trocar a rede Wi‑Fi;
 - ativar/desativar e ordenar cards;
+- excluir e restaurar cards sem apagar o manifesto da configuração;
 - exportar/importar a configuração dos cards em JSON;
 - salvar variáveis persistentes, inclusive segredos;
 - consultar logs e o schema da API para agentes.
@@ -126,6 +127,7 @@ Na variante JC3248W535EN, a camada de display troca apenas o backend físico por
 Este é um projeto open source. Consulte:
 
 - [CONTRIBUTING.md](CONTRIBUTING.md) para contribuir;
+- [cards/README.md](cards/README.md) para criar e catalogar cards;
 - [SECURITY.md](SECURITY.md) para reportar vulnerabilidades;
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) para as regras da comunidade.
 

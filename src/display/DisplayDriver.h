@@ -39,6 +39,7 @@ public:
     static void init();
     static void handle();
     static void setBrightness(uint8_t brightness);
+    static int8_t consumeSwipe();
 
 private:
     static const uint16_t SCREEN_WIDTH = DISPLAY_WIDTH;
@@ -48,6 +49,13 @@ private:
     static lv_disp_draw_buf_t draw_buf;
     static lv_color_t* buf_1;
     static lv_color_t* buf_2;
+
+    static bool touchPressed;
+    static int16_t touchStartX;
+    static int16_t touchStartY;
+    static int16_t touchLastX;
+    static int16_t touchLastY;
+    static int8_t pendingSwipe;
 
     static void flushCallback(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p);
     static void touchCallback(lv_indev_drv_t *indev_driver, lv_indev_data_t *data);

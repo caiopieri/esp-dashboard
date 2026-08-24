@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "clock_system",
+  "title": "Clock",
+  "kind": "built-in",
+  "source": "src/apps/ClockWeatherApp.h",
+  "provider": null,
+  "requiredVariables": [],
+  "boards": ["esp32-cyd", "esp32-s3-jc3248w535"]
+}

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "gemini_usage",
+  "title": "Gemini",
+  "kind": "built-in",
+  "source": "src/apps/GeminiUsageApp.h",
+  "provider": "gemini",
+  "requiredVariables": ["GEMINI_USAGE_PERCENT", "GEMINI_WEEKLY_PERCENT", "GEMINI_TOKENS", "GEMINI_REQUESTS"],
+  "usagePushProvider": "gemini",
+  "boards": ["esp32-cyd", "esp32-s3-jc3248w535"]
+}

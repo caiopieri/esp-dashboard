@@ -13,6 +13,12 @@ XPT2046_Touchscreen DisplayDriver::ts(CYD_TP_CS);
 lv_disp_draw_buf_t DisplayDriver::draw_buf;
 lv_color_t* DisplayDriver::buf_1 = nullptr;
 lv_color_t* DisplayDriver::buf_2 = nullptr;
+bool DisplayDriver::touchPressed = false;
+int16_t DisplayDriver::touchStartX = 0;
+int16_t DisplayDriver::touchStartY = 0;
+int16_t DisplayDriver::touchLastX = 0;
+int16_t DisplayDriver::touchLastY = 0;
+int8_t DisplayDriver::pendingSwipe = 0;
 
 void DisplayDriver::flushCallback(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p) {
     uint32_t w = (area->x2 - area->x1 + 1);
@@ -20,6 +26,9 @@ void DisplayDriver::flushCallback(lv_disp_drv_t *disp, const lv_area_t *area, lv
 
     #if defined(BOARD_JC3248W535EN)
     gfx.drawPixels(area->x1, area->y1, &color_p->full, w, h);
+    if (lv_disp_flush_is_last(disp)) {
+        gfx.present();
+    }
     #else
     gfx.startWrite();
     gfx.setAddrWindow(area->x1, area->y1, w, h);
@@ -36,10 +45,28 @@ void DisplayDriver::touchCallback(lv_indev_drv_t *indev_driver, lv_indev_data_t 
     #if defined(BOARD_JC3248W535EN)
     JC3248TouchPoint point;
     if (touch.read(point)) {
+        if (!touchPressed) {
+            touchStartX = point.x;
+            touchStartY = point.y;
+            Serial.printf("[Touch] press x=%d y=%d\n", point.x, point.y);
+        }
+        touchLastX = point.x;
+        touchLastY = point.y;
+        touchPressed = true;
         data->state = LV_INDEV_STATE_PR;
         data->point.x = point.x;
         data->point.y = point.y;
     } else {
+        if (touchPressed) {
+            const int16_t deltaX = touchLastX - touchStartX;
+            const int16_t deltaY = touchLastY - touchStartY;
+            Serial.printf("[Touch] release dx=%d dy=%d\n", deltaX, deltaY);
+            if (abs(deltaX) >= 45 && abs(deltaX) > abs(deltaY)) {
+                pendingSwipe = deltaX < 0 ? -1 : 1;
+                Serial.printf("[Touch] swipe direction=%d\n", pendingSwipe);
+            }
+        }
+        touchPressed = false;
         data->state = LV_INDEV_STATE_REL;
     }
     #else
@@ -63,6 +90,12 @@ void DisplayDriver::touchCallback(lv_indev_drv_t *indev_driver, lv_indev_data_t 
     }
     data->state = LV_INDEV_STATE_REL;
     #endif
+}
+
+int8_t DisplayDriver::consumeSwipe() {
+    const int8_t swipe = pendingSwipe;
+    pendingSwipe = 0;
+    return swipe;
 }
 
 void DisplayDriver::init() {

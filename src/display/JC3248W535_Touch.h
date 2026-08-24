@@ -5,6 +5,8 @@
 
 constexpr int8_t JC3248_TOUCH_SDA = 4;
 constexpr int8_t JC3248_TOUCH_SCL = 8;
+constexpr int8_t JC3248_TOUCH_RST = 12;
+constexpr int8_t JC3248_TOUCH_INT = 3;
 constexpr uint8_t JC3248_TOUCH_ADDRESS = 0x3B;
 
 struct JC3248TouchPoint {
@@ -27,4 +29,9 @@ private:
     uint8_t _rotation = 1;
     uint16_t _width = 480;
     uint16_t _height = 320;
+    uint8_t _stableSamples = 0;
+    int16_t _lastX = 0;
+    int16_t _lastY = 0;
+    bool _contactActive = false;
+    uint32_t _lastContactMs = 0;
 };

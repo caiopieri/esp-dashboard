@@ -4,12 +4,17 @@
 #include "core/AppManager.h"
 #include "core/NetworkManager.h"
 #include "core/DeviceLog.h"
+#include "core/VariableStore.h"
 
 // Apps
 #include "apps/GeminiUsageApp.h"
+#include "apps/ChatGPTUsageApp.h"
+#include "apps/ClaudeUsageApp.h"
 #include "apps/ClockWeatherApp.h"
 
 static GeminiUsageApp geminiApp;
+static ChatGPTUsageApp chatgptApp;
+static ClaudeUsageApp claudeApp;
 static ClockWeatherApp clockApp;
 
 void setup() {
@@ -24,8 +29,13 @@ void setup() {
     DisplayDriver::init();
     DisplayDriver::setBrightness(SCREEN_BRIGHTNESS);
 
+    // Load card data before AppManager creates the first visible card.
+    VariableStore::getInstance().begin();
+
     // 2. Register Apps to the Carousel
     AppManager::getInstance().registerApp(&geminiApp);
+    AppManager::getInstance().registerApp(&chatgptApp);
+    AppManager::getInstance().registerApp(&claudeApp);
     AppManager::getInstance().registerApp(&clockApp);
 
     // 3. Build UI Carousel & Lifecycle Manager
@@ -45,5 +55,7 @@ void loop() {
     // Handle background Wi-Fi & OTA updates
     NetworkManager::getInstance().handle();
 
-    delay(5);
+    // Keep the LVGL/input loop responsive; display transfers are synchronous
+    // and already provide the necessary pacing.
+    delay(1);
 }

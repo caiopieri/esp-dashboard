@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "cards": [
+    {
+      "id": "gemini_usage",
+      "title": "Gemini",
+      "kind": "built-in",
+      "source": "src/apps/GeminiUsageApp.h",
+      "providers": ["gemini"],
+      "requiredVariables": [
+        "GEMINI_USAGE_PERCENT",
+        "GEMINI_WEEKLY_PERCENT",
+        "GEMINI_TOKENS",
+        "GEMINI_REQUESTS"
+      ],
+      "boards": ["esp32-cyd", "esp32-s3-jc3248w535"]
+    },
+    {
+      "id": "chatgpt_usage",
+      "title": "ChatGPT",
+      "kind": "built-in",
+      "source": "src/apps/ChatGPTUsageApp.h",
+      "providers": ["openai"],
+      "requiredVariables": [
+        "CHATGPT_USAGE_PERCENT",
+        "CHATGPT_WEEKLY_PERCENT",
+        "CHATGPT_TOKENS",
+        "CHATGPT_REQUESTS"
+      ],
+      "boards": ["esp32-cyd", "esp32-s3-jc3248w535"]
+    },
+    {
+      "id": "claude_usage",
+      "title": "Claude",
+      "kind": "built-in",
+      "source": "src/apps/ClaudeUsageApp.h",
+      "providers": ["claude"],
+      "requiredVariables": [
+        "CLAUDE_USAGE_PERCENT",
+        "CLAUDE_WEEKLY_PERCENT",
+        "CLAUDE_TOKENS",
+        "CLAUDE_REQUESTS"
+      ],
+      "boards": ["esp32-cyd", "esp32-s3-jc3248w535"]
+    },
+    {
+      "id": "clock_system",
+      "title": "Clock",
+      "kind": "built-in",
+      "source": "src/apps/ClockWeatherApp.h",
+      "providers": [],
+      "requiredVariables": [],
+      "boards": ["esp32-cyd", "esp32-s3-jc3248w535"]
+    }
+  ]
+}
