@@ -31,13 +31,20 @@ class UsageAgentTests(unittest.TestCase):
             {"provider": "agy", "window_key": "gemini-2.5-pro", "remaining_percentage": 55, "next_reset_at": "2099-01-01T04:00:00Z"},
             {"provider": "agy", "window_key": "gemini_weekly", "remaining_percentage": 90, "next_reset_at": "2099-01-02T04:00:00Z"},
         ]
-        snapshots = usage_agent.build_omniroute_snapshots(rows, {})
+        snapshots = usage_agent.build_omniroute_snapshots(rows, {}, {
+            "claude": {"tokens": 1200, "requests": 3},
+            "codex": {"tokens": 4500, "requests": 7},
+            "agy": {"tokens": 800, "requests": 2},
+        })
         self.assertEqual(snapshots["claude"]["session_percent"], 90)
         self.assertEqual(snapshots["claude"]["weekly_percent"], 32)
         self.assertIsNone(snapshots["chatgpt"]["session_percent"])
         self.assertEqual(snapshots["chatgpt"]["weekly_percent"], 60)
         self.assertEqual(snapshots["gemini"]["session_percent"], 45)
         self.assertEqual(snapshots["gemini"]["weekly_percent"], 10)
+        self.assertEqual(snapshots["claude"]["tokens"], "1200")
+        self.assertEqual(snapshots["chatgpt"]["requests"], "7")
+        self.assertEqual(snapshots["gemini"]["tokens"], "800")
 
     def test_config_is_created_without_secrets(self):
         with tempfile.TemporaryDirectory() as directory:

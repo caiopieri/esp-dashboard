@@ -56,16 +56,14 @@ public:
 
         lv_anim_init(&_robotAnim);
         lv_anim_set_var(&_robotAnim, _robot);
-        lv_anim_set_values(&_robotAnim, -2, 2);
-        lv_anim_set_time(&_robotAnim, 900);
-        lv_anim_set_playback_time(&_robotAnim, 900);
+        lv_anim_set_values(&_robotAnim, 0, -8);
+        lv_anim_set_time(&_robotAnim, 380);
+        lv_anim_set_playback_time(&_robotAnim, 380);
         lv_anim_set_repeat_count(&_robotAnim, LV_ANIM_REPEAT_INFINITE);
         lv_anim_set_exec_cb(&_robotAnim, [](void* var, int32_t value) {
-            lv_obj_set_y(static_cast<lv_obj_t*>(var), value);
+            lv_obj_set_style_translate_y(static_cast<lv_obj_t*>(var), value, 0);
         });
-#if !defined(BOARD_JC3248W535EN)
         lv_anim_start(&_robotAnim);
-#endif
     }
 
     void onUpdate() override {

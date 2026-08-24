@@ -62,16 +62,14 @@ public:
         // 2. Robot Mascot Floating Animation
         lv_anim_init(&_robotAnim);
         lv_anim_set_var(&_robotAnim, _robotLabel);
-        lv_anim_set_values(&_robotAnim, -2, 2);
-        lv_anim_set_time(&_robotAnim, 800);
-        lv_anim_set_playback_time(&_robotAnim, 800);
+        lv_anim_set_values(&_robotAnim, 0, -7);
+        lv_anim_set_time(&_robotAnim, 420);
+        lv_anim_set_playback_time(&_robotAnim, 420);
         lv_anim_set_repeat_count(&_robotAnim, LV_ANIM_REPEAT_INFINITE);
         lv_anim_set_exec_cb(&_robotAnim, [](void* var, int32_t val) {
-            lv_obj_set_y((lv_obj_t*)var, val);
+            lv_obj_set_style_translate_y((lv_obj_t*)var, val, 0);
         });
-#if !defined(BOARD_JC3248W535EN)
         lv_anim_start(&_robotAnim);
-#endif
 
         // 3. Weekly Quota Progress Bar
         lv_obj_t* barLabel = lv_label_create(_rootCard);

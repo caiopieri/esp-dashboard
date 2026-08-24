@@ -268,7 +268,16 @@ def _providers_from_config(value: Any, fallback: list[str]) -> list[str]:
     return [str(item) for item in value if str(item)] or fallback
 
 
-def build_omniroute_snapshots(rows: list[Mapping[str, Any]], settings: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
+def _attach_today_metrics(snapshot: Dict[str, Any], provider: str,
+                          metrics: Mapping[str, Mapping[str, int]], sources: list[str]) -> None:
+    matching = [metrics[name] for name in sources if name in metrics]
+    if matching:
+        snapshot["tokens"] = str(sum(item["tokens"] for item in matching))
+        snapshot["requests"] = str(sum(item["requests"] for item in matching))
+
+
+def build_omniroute_snapshots(rows: list[Mapping[str, Any]], settings: Mapping[str, Any],
+                              metrics: Optional[Mapping[str, Mapping[str, int]]] = None) -> Dict[str, Dict[str, Any]]:
     """Convert OmniRoute's remaining-quota rows into ESP usage snapshots."""
     latest = _latest_rows(rows)
     result: Dict[str, Dict[str, Any]] = {}
@@ -292,6 +301,7 @@ def build_omniroute_snapshots(rows: list[Mapping[str, Any]], settings: Mapping[s
             "status": "omniroute",
             "ok": True,
         }
+        _attach_today_metrics(result["claude"], "claude", metrics or {}, claude_providers)
 
     # OmniRoute exposes Codex/ChatGPT as a rolling session. The device's GPT
     # card intentionally presents that value as its single weekly window.
@@ -312,6 +322,7 @@ def build_omniroute_snapshots(rows: list[Mapping[str, Any]], settings: Mapping[s
             "status": "omniroute",
             "ok": True,
         }
+        _attach_today_metrics(result["chatgpt"], "chatgpt", metrics or {}, gpt_providers + ["chatgpt-web"])
 
     gemini_providers = _providers_from_config(settings.get("gemini_providers"), ["agy", "antigravity"])
     weekly_rows = [
@@ -340,6 +351,7 @@ def build_omniroute_snapshots(rows: list[Mapping[str, Any]], settings: Mapping[s
             "status": "omniroute",
             "ok": True,
         }
+        _attach_today_metrics(result["gemini"], "gemini", metrics or {}, gemini_providers + ["gemini"])
     return result
 
 
@@ -359,10 +371,17 @@ def omniroute_snapshots(settings: Mapping[str, Any]) -> Dict[str, Dict[str, Any]
             "ORDER BY created_at DESC",
             (modifier,),
         )]
+        metrics = {
+            str(provider): {"tokens": int(tokens or 0), "requests": int(requests or 0)}
+            for provider, tokens, requests in connection.execute(
+                "SELECT provider, COALESCE(SUM(tokens_input + tokens_output), 0), COUNT(*) "
+                "FROM usage_history WHERE timestamp >= date('now') AND success = 1 GROUP BY provider"
+            )
+        }
         connection.close()
     except (OSError, sqlite3.Error) as exc:
         raise AgentError("falha ao ler cache do OmniRoute: %s" % exc)
-    snapshots = build_omniroute_snapshots(rows, settings)
+    snapshots = build_omniroute_snapshots(rows, settings, metrics)
     if not snapshots:
         raise AgentError("OmniRoute não tem quotas recentes no cache")
     return snapshots

@@ -34,6 +34,8 @@ public:
         lv_obj_set_style_text_color(subtitle, lv_color_hex(0xA6ADC8), 0);
         lv_obj_align(subtitle, LV_ALIGN_TOP_LEFT, 3, 22);
 
+        createRobot();
+
         _syncLabel = lv_label_create(_rootCard);
         lv_obj_set_style_text_font(_syncLabel, _layout.smallFont(), 0);
         lv_obj_set_style_text_color(_syncLabel, lv_color_hex(0xF2CDCD), 0);
@@ -51,6 +53,17 @@ public:
         createMetricCard(0, "Tokens hoje", &_tokensLabel);
         createMetricCard(1, "Requisições", &_requestsLabel);
         refreshUsage();
+
+        lv_anim_init(&_robotAnim);
+        lv_anim_set_var(&_robotAnim, _robot);
+        lv_anim_set_values(&_robotAnim, 0, -8);
+        lv_anim_set_time(&_robotAnim, 380);
+        lv_anim_set_playback_time(&_robotAnim, 380);
+        lv_anim_set_repeat_count(&_robotAnim, LV_ANIM_REPEAT_INFINITE);
+        lv_anim_set_exec_cb(&_robotAnim, [](void* var, int32_t value) {
+            lv_obj_set_style_translate_y(static_cast<lv_obj_t*>(var), value, 0);
+        });
+        lv_anim_start(&_robotAnim);
     }
 
     void onUpdate() override {
@@ -58,6 +71,7 @@ public:
     }
 
     void onStop() override {
+        if (_robot) lv_anim_del(_robot, nullptr);
         if (_rootCard) {
             lv_obj_del(_rootCard);
             _rootCard = nullptr;
@@ -95,6 +109,40 @@ private:
         lv_obj_align(*valueLabel, LV_ALIGN_BOTTOM_LEFT, 0, -2);
     }
 
+    void createRobot() {
+        _robot = lv_obj_create(_rootCard);
+        lv_obj_set_size(_robot, _layout.scaled(42), _layout.scaled(38));
+        lv_obj_align(_robot, LV_ALIGN_TOP_RIGHT, -_layout.scaled(2), -_layout.scaled(1));
+        lv_obj_set_style_bg_opa(_robot, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(_robot, 0, 0);
+        lv_obj_set_style_pad_all(_robot, 0, 0);
+        lv_obj_clear_flag(_robot, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t* antenna = lv_obj_create(_robot);
+        lv_obj_set_size(antenna, _layout.scaled(2), _layout.scaled(6));
+        lv_obj_align(antenna, LV_ALIGN_TOP_MID, 0, 0);
+        lv_obj_set_style_bg_color(antenna, lv_color_hex(0xF2CDCD), 0);
+        lv_obj_set_style_border_width(antenna, 0, 0);
+
+        lv_obj_t* head = lv_obj_create(_robot);
+        lv_obj_set_size(head, _layout.scaled(32), _layout.scaled(24));
+        lv_obj_align(head, LV_ALIGN_BOTTOM_MID, 0, 0);
+        lv_obj_set_style_bg_color(head, lv_color_hex(0x24243A), 0);
+        lv_obj_set_style_border_color(head, lv_color_hex(0xF2CDCD), 0);
+        lv_obj_set_style_border_width(head, 2, 0);
+        lv_obj_set_style_radius(head, 8, 0);
+        lv_obj_set_style_pad_all(head, 0, 0);
+
+        for (int x : {-7, 5}) {
+            lv_obj_t* eye = lv_obj_create(head);
+            lv_obj_set_size(eye, _layout.scaled(5), _layout.scaled(5));
+            lv_obj_align(eye, LV_ALIGN_CENTER, x, -1);
+            lv_obj_set_style_bg_color(eye, lv_color_hex(0xF2CDCD), 0);
+            lv_obj_set_style_border_width(eye, 0, 0);
+            lv_obj_set_style_radius(eye, LV_RADIUS_CIRCLE, 0);
+        }
+    }
+
     void refreshUsage() {
         _lastRefresh = millis();
         ProviderUsage usage;
@@ -113,10 +161,12 @@ private:
     }
 
     lv_obj_t* _rootCard = nullptr;
+    lv_obj_t* _robot = nullptr;
     lv_obj_t* _syncLabel = nullptr;
     lv_obj_t* _progressBar = nullptr;
     lv_obj_t* _tokensLabel = nullptr;
     lv_obj_t* _requestsLabel = nullptr;
+    lv_anim_t _robotAnim;
     AppCardLayout _layout;
     unsigned long _lastRefresh = 0;
 };

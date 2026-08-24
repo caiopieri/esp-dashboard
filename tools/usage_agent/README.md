@@ -46,6 +46,9 @@ enviado ao ESP. Esse cache fornece:
 - GPT/ChatGPT: a janela disponível no OmniRoute é apresentada como semanal;
 - Gemini: janela atual por modelo e semanal do projeto.
 
+Quando o OmniRoute possui registros de chamadas no dia, o agente também envia
+os tokens de entrada/saída e o número de requisições de hoje para os cards.
+
 O instalador habilita essa fonte por padrão. O cache precisa ser atualizado
 recentemente pelo OmniRoute; por padrão, snapshots com mais de dez minutos são
 ignorados.
