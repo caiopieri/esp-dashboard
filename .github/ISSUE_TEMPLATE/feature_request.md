@@ -12,4 +12,3 @@ labels: enhancement
 ## Hardware afetado
 
 ## Trade-offs
-

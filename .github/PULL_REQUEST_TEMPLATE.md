@@ -21,4 +21,3 @@
 - [ ] Considerei impacto em RAM, flash e loop do LVGL.
 
 ## Observações
-
