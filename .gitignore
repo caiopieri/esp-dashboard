@@ -1,0 +1,7 @@
+.pio/
+.vscode/
+.idea/
+.DS_Store
+*.log
+src/config.local.h
+secrets/
