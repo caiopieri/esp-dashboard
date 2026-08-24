@@ -4,7 +4,7 @@ Firmware modular para displays inteligentes baseados em ESP32, com carrossel de 
 
 ## Estado atual
 
-O alvo validado é o **ESP32-2432S028R / Cheap Yellow Display (CYD)**:
+O alvo de produção validado é o **ESP32-2432S028R / Cheap Yellow Display (CYD)**:
 
 - ESP32 clássico, 240 MHz, 4 MB flash;
 - display ILI9341 320×240 em paisagem;
@@ -14,7 +14,19 @@ O alvo validado é o **ESP32-2432S028R / Cheap Yellow Display (CYD)**:
 - carrossel de mini-apps;
 - painel web local para Wi‑Fi, cards, variáveis e diagnóstico.
 
-O **ESP32-S3 N16R8** é o próximo alvo de desenvolvimento. Ele ainda não é considerado suportado: será necessário criar uma variante de hardware com mapa de pinos, driver de display/touch, alvo PlatformIO e validação de memória próprios.
+O **ESP32-S3 N16R8 com tela JC3248W535EN** tem um perfil de compilação experimental:
+
+- display AXS15231B 320×480 em QSPI, usado pelo firmware em 480×320 paisagem;
+- touch capacitivo AXS15231B em I²C;
+- 16 MB flash com PSRAM OPI;
+- Arduino_GFX 1.4.9 no driver dessa variante, mantendo LovyanGFX no CYD.
+
+Esse perfil já passa na compilação, mas ainda não foi gravado nem validado no hardware físico. A primeira validação exigirá a placa conectada e um teste específico de display, touch, Wi‑Fi e cartão SD.
+
+| Perfil | Hardware | Estado | Comando |
+| --- | --- | --- | --- |
+| `esp32-cyd` | ESP32-2432S028R / ILI9341 + XPT2046 | Validado | `pio run -e esp32-cyd` |
+| `esp32-s3-jc3248w535` | ESP32-S3 N16R8 / AXS15231B QSPI + I²C | Compilado; aguardando validação física | `pio run -e esp32-s3-jc3248w535` |
 
 ## Painel web
 
@@ -75,7 +87,7 @@ As credenciais iniciais ficam em `src/config.h`. Deixe os valores de template e 
 ## Arquitetura
 
 ```text
-LovyanGFX + XPT2046
+LovyanGFX + XPT2046 (CYD)
           ↓
        LVGL 8
           ↓
@@ -97,13 +109,16 @@ src/
 └── display/    LovyanGFX, LVGL e touch XPT2046
 ```
 
+Na variante JC3248W535EN, a camada de display troca apenas o backend físico por Arduino_GFX + AXS15231B/QSPI, e o touch usa o driver I²C AXS15231B. A camada LVGL, o carrossel, a rede, os logs e as variáveis permanecem compartilhados.
+
 ## Roadmap
 
 - autenticação/token para o painel web;
 - motor genérico de cards com templates e fontes de dados;
 - adaptador para cards que consultam APIs, incluindo uso de variáveis secretas;
 - imagens e temas via LittleFS com limites de tamanho;
-- variante `esp32-s3-n16r8` com mapa de hardware separado;
+- validação física da variante `esp32-s3-jc3248w535`;
+- suporte ao cartão SD da variante S3;
 - testes automatizados para validação de JSON e configuração persistente.
 
 ## Comunidade
