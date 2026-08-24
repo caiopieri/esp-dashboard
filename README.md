@@ -106,6 +106,14 @@ src/
 - variante `esp32-s3-n16r8` com mapa de hardware separado;
 - testes automatizados para validação de JSON e configuração persistente.
 
+## Comunidade
+
+Este é um projeto open source. Consulte:
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) para contribuir;
+- [SECURITY.md](SECURITY.md) para reportar vulnerabilidades;
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) para as regras da comunidade.
+
 ## Licença
 
-Ainda não definida.
+Distribuído sob a licença [MIT](LICENSE).
