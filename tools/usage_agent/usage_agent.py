@@ -378,6 +378,13 @@ def omniroute_snapshots(settings: Mapping[str, Any]) -> Dict[str, Dict[str, Any]
                 "FROM usage_history WHERE timestamp >= date('now') AND success = 1 GROUP BY provider"
             )
         }
+        configured_sources = {"codex", "chatgpt-web", "gemini"}
+        for key in ("claude_providers", "gpt_providers", "gemini_providers"):
+            values = settings.get(key, [])
+            if isinstance(values, list):
+                configured_sources.update(str(value) for value in values)
+        for provider in configured_sources:
+            metrics.setdefault(provider, {"tokens": 0, "requests": 0})
         connection.close()
     except (OSError, sqlite3.Error) as exc:
         raise AgentError("falha ao ler cache do OmniRoute: %s" % exc)
