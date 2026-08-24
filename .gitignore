@@ -3,5 +3,7 @@
 .idea/
 .DS_Store
 *.log
+__pycache__/
+*.pyc
 src/config.local.h
 secrets/
