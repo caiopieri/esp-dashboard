@@ -5,15 +5,20 @@
 struct ProviderUsage {
     bool valid = false;
     bool ok = false;
-    int sessionPercent = 0;
-    int weeklyPercent = 0;
-    int sessionResetMinutes = 0;
-    int weeklyResetMinutes = 0;
+    // -1 means that this provider does not expose the corresponding window.
+    int sessionPercent = -1;
+    int weeklyPercent = -1;
+    int sessionResetMinutes = -1;
+    int weeklyResetMinutes = -1;
     String tokens;
     String requests;
     String status;
     uint32_t updatedAt = 0;
 };
+
+inline String providerUsagePercent(int value) {
+    return value >= 0 ? String(value) + "%" : String("--");
+}
 
 class ProviderUsageStore {
 public:

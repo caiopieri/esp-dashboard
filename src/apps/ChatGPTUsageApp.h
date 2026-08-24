@@ -151,16 +151,17 @@ private:
         _lastRefresh = millis();
         ProviderUsage usage;
         const bool hasRuntime = ProviderUsageStore::getInstance().get("chatgpt", usage);
-        const int percent = hasRuntime ? usage.sessionPercent :
+        const int percent = hasRuntime ? usage.weeklyPercent :
             constrain(readVariable("CHATGPT_USAGE_PERCENT", "0").toInt(), 0, 100);
         const int weekly = hasRuntime ? usage.weeklyPercent :
             constrain(readVariable("CHATGPT_WEEKLY_PERCENT", "0").toInt(), 0, 100);
 #if defined(BOARD_JC3248W535EN)
-        lv_bar_set_value(_progressBar, percent, LV_ANIM_OFF);
+        lv_bar_set_value(_progressBar, max(0, percent), LV_ANIM_OFF);
 #else
         lv_bar_set_value(_progressBar, percent, LV_ANIM_ON);
 #endif
-        lv_label_set_text_fmt(_syncLabel, "Sessao %d%% | 7d %d%%", percent, weekly);
+        const String quota = "7d " + providerUsagePercent(weekly);
+        lv_label_set_text(_syncLabel, quota.c_str());
         const String tokens = hasRuntime && usage.tokens.length() > 0 ? usage.tokens : readVariable("CHATGPT_TOKENS", "--");
         const String requests = hasRuntime && usage.requests.length() > 0 ? usage.requests : readVariable("CHATGPT_REQUESTS", "--");
         lv_label_set_text(_tokensLabel, tokens.c_str());

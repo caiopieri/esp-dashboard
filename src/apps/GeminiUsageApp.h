@@ -166,8 +166,9 @@ private:
             constrain(readVariable("GEMINI_USAGE_PERCENT", "0").toInt(), 0, 100);
         const int weekly = hasRuntime ? usage.weeklyPercent :
             constrain(readVariable("GEMINI_WEEKLY_PERCENT", "0").toInt(), 0, 100);
-        lv_bar_set_value(_progressBar, percent, LV_ANIM_OFF);
-        lv_label_set_text_fmt(_quotaLabel, "Sessao %d%% | 7d %d%%", percent, weekly);
+        lv_bar_set_value(_progressBar, max(0, percent), LV_ANIM_OFF);
+        const String quota = "5h " + providerUsagePercent(percent) + " | 7d " + providerUsagePercent(weekly);
+        lv_label_set_text(_quotaLabel, quota.c_str());
         const String tokens = hasRuntime && usage.tokens.length() > 0 ? usage.tokens : readVariable("GEMINI_TOKENS", "--");
         const String requests = hasRuntime && usage.requests.length() > 0 ? usage.requests : readVariable("GEMINI_REQUESTS", "--");
         lv_label_set_text(_tokenValLabel, tokens.c_str());

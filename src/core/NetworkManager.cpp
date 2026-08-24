@@ -174,10 +174,26 @@ void NetworkManager::begin(const char* ssid, const char* password) {
         const char* provider = doc["provider"] | "";
         ProviderUsage usage;
         usage.ok = doc["ok"] | true;
-        usage.sessionPercent = constrain(doc["session_percent"] | (doc["s"] | 0), 0, 100);
-        usage.weeklyPercent = constrain(doc["weekly_percent"] | (doc["w"] | 0), 0, 100);
-        usage.sessionResetMinutes = max(0, doc["session_reset_minutes"] | (doc["sr"] | 0));
-        usage.weeklyResetMinutes = max(0, doc["weekly_reset_minutes"] | (doc["wr"] | 0));
+        if (!doc["session_percent"].isNull()) {
+            usage.sessionPercent = constrain(doc["session_percent"].as<int>(), 0, 100);
+        } else if (!doc["s"].isNull()) {
+            usage.sessionPercent = constrain(doc["s"].as<int>(), 0, 100);
+        }
+        if (!doc["weekly_percent"].isNull()) {
+            usage.weeklyPercent = constrain(doc["weekly_percent"].as<int>(), 0, 100);
+        } else if (!doc["w"].isNull()) {
+            usage.weeklyPercent = constrain(doc["w"].as<int>(), 0, 100);
+        }
+        if (!doc["session_reset_minutes"].isNull()) {
+            usage.sessionResetMinutes = max(0, doc["session_reset_minutes"].as<int>());
+        } else if (!doc["sr"].isNull()) {
+            usage.sessionResetMinutes = max(0, doc["sr"].as<int>());
+        }
+        if (!doc["weekly_reset_minutes"].isNull()) {
+            usage.weeklyResetMinutes = max(0, doc["weekly_reset_minutes"].as<int>());
+        } else if (!doc["wr"].isNull()) {
+            usage.weeklyResetMinutes = max(0, doc["wr"].as<int>());
+        }
         usage.status = String(doc["status"] | (doc["st"] | ""));
 
         if (doc["tokens"].is<const char*>()) usage.tokens = doc["tokens"].as<const char*>();

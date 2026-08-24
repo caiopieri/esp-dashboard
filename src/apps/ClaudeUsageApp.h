@@ -103,8 +103,9 @@ private:
             constrain(readVariable("CLAUDE_USAGE_PERCENT", "0").toInt(), 0, 100);
         const int weekly = hasRuntime ? usage.weeklyPercent :
             constrain(readVariable("CLAUDE_WEEKLY_PERCENT", "0").toInt(), 0, 100);
-        lv_bar_set_value(_progressBar, percent, LV_ANIM_OFF);
-        lv_label_set_text_fmt(_syncLabel, "Sessao %d%% | 7d %d%%", percent, weekly);
+        lv_bar_set_value(_progressBar, max(0, percent), LV_ANIM_OFF);
+        const String quota = "5h " + providerUsagePercent(percent) + " | 7d " + providerUsagePercent(weekly);
+        lv_label_set_text(_syncLabel, quota.c_str());
         const String tokens = hasRuntime && usage.tokens.length() > 0 ? usage.tokens : readVariable("CLAUDE_TOKENS", "--");
         const String requests = hasRuntime && usage.requests.length() > 0 ? usage.requests : readVariable("CLAUDE_REQUESTS", "--");
         lv_label_set_text(_tokensLabel, tokens.c_str());

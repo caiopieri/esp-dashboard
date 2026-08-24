@@ -3,7 +3,7 @@
   "interval_seconds": 60,
   "providers": {
     "claude": {
-      "enabled": true,
+      "enabled": false,
       "keychain_service": "Claude Code-credentials",
       "model": "claude-haiku-4-5-20251001"
     },
@@ -16,6 +16,15 @@
     "gemini": {
       "enabled": false,
       "snapshot_file": ""
+    },
+    "omniroute": {
+      "enabled": true,
+      "database": "~/.omniroute/storage.sqlite",
+      "max_age_seconds": 600,
+      "claude_providers": ["claude"],
+      "gpt_providers": ["codex"],
+      "gemini_providers": ["agy", "antigravity"],
+      "gemini_model": ""
     }
   }
 }

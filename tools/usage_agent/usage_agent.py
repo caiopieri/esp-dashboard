@@ -12,6 +12,7 @@ import json
 import os
 import plistlib
 import re
+import sqlite3
 import subprocess
 import sys
 import time
@@ -29,7 +30,7 @@ DEFAULT_CONFIG = {
     "interval_seconds": DEFAULT_INTERVAL,
     "providers": {
         "claude": {
-            "enabled": True,
+            "enabled": False,
             "keychain_service": "Claude Code-credentials",
             "model": "claude-haiku-4-5-20251001",
         },
@@ -41,6 +42,15 @@ DEFAULT_CONFIG = {
         "gemini": {
             "enabled": False,
             "snapshot_file": "",
+        },
+        "omniroute": {
+            "enabled": True,
+            "database": "~/.omniroute/storage.sqlite",
+            "max_age_seconds": 600,
+            "claude_providers": ["claude"],
+            "gpt_providers": ["codex"],
+            "gemini_providers": ["agy", "antigravity"],
+            "gemini_model": "",
         },
     },
 }
@@ -177,6 +187,23 @@ def http_json(url: str, method: str = "GET", headers: Optional[Mapping[str, str]
         raise AgentError("falha HTTP em %s: %s" % (url, exc))
 
 
+def http_form(url: str, fields: Mapping[str, Any], timeout: int = 20) -> Mapping[str, Any]:
+    request = Request(
+        url,
+        data=urlencode(fields).encode("utf-8"),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8") or "{}")
+    except HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:240]
+        raise AgentError("%s retornou HTTP %d: %s" % (url, exc.code, detail))
+    except (URLError, TimeoutError, OSError, ValueError) as exc:
+        raise AgentError("falha HTTP em %s: %s" % (url, exc))
+
+
 def header(headers: Mapping[str, str], name: str, default: str = "") -> str:
     wanted = name.lower()
     for key, value in headers.items():
@@ -201,6 +228,144 @@ def reset_minutes(value: str, now: Optional[float] = None) -> int:
     except (TypeError, ValueError):
         return 0
     return max(0, int(round(remaining / 60)))
+
+
+def reset_minutes_from_iso(value: Any, now: Optional[float] = None) -> int:
+    if not isinstance(value, str) or not value:
+        return -1
+    try:
+        normalized = value.replace("Z", "+00:00")
+        from datetime import datetime, timezone
+        target = datetime.fromisoformat(normalized)
+        if target.tzinfo is None:
+            target = target.replace(tzinfo=timezone.utc)
+        current = datetime.fromtimestamp(now or time.time(), tz=timezone.utc)
+        return max(0, int(round((target - current).total_seconds() / 60)))
+    except (TypeError, ValueError, OverflowError):
+        return -1
+
+
+def quota_used_percent(value: Any) -> int:
+    try:
+        remaining = float(value)
+    except (TypeError, ValueError):
+        return -1
+    return max(0, min(100, int(round(100 - remaining))))
+
+
+def _latest_rows(rows: list[Mapping[str, Any]]) -> Dict[tuple[str, str], Mapping[str, Any]]:
+    latest: Dict[tuple[str, str], Mapping[str, Any]] = {}
+    for row in rows:
+        key = (str(row.get("provider", "")), str(row.get("window_key", "")))
+        if key[0] and key[1] and key not in latest:
+            latest[key] = row
+    return latest
+
+
+def _providers_from_config(value: Any, fallback: list[str]) -> list[str]:
+    if not isinstance(value, list):
+        return fallback
+    return [str(item) for item in value if str(item)] or fallback
+
+
+def build_omniroute_snapshots(rows: list[Mapping[str, Any]], settings: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """Convert OmniRoute's remaining-quota rows into ESP usage snapshots."""
+    latest = _latest_rows(rows)
+    result: Dict[str, Dict[str, Any]] = {}
+
+    claude_providers = _providers_from_config(settings.get("claude_providers"), ["claude"])
+    claude_rows = []
+    for provider in claude_providers:
+        for window in ("session (5h)", "session", "weekly (7d)", "weekly"):
+            row = latest.get((provider, window))
+            if row:
+                claude_rows.append((window, row))
+    if claude_rows:
+        session = next((row for window, row in claude_rows if "session" in window), None)
+        weekly = next((row for window, row in claude_rows if "weekly" in window), None)
+        result["claude"] = {
+            "provider": "claude",
+            "session_percent": quota_used_percent(session.get("remaining_percentage")) if session else None,
+            "weekly_percent": quota_used_percent(weekly.get("remaining_percentage")) if weekly else None,
+            "session_reset_minutes": reset_minutes_from_iso(session.get("next_reset_at")) if session else None,
+            "weekly_reset_minutes": reset_minutes_from_iso(weekly.get("next_reset_at")) if weekly else None,
+            "status": "omniroute",
+            "ok": True,
+        }
+
+    # OmniRoute exposes Codex/ChatGPT as a rolling session. The device's GPT
+    # card intentionally presents that value as its single weekly window.
+    gpt_providers = _providers_from_config(settings.get("gpt_providers"), ["codex"])
+    gpt_row = next(
+        (latest[(provider, window)] for provider in gpt_providers
+         for window in ("weekly", "weekly (7d)", "session")
+         if (provider, window) in latest),
+        None,
+    )
+    if gpt_row:
+        result["chatgpt"] = {
+            "provider": "chatgpt",
+            "session_percent": None,
+            "weekly_percent": quota_used_percent(gpt_row.get("remaining_percentage")),
+            "session_reset_minutes": None,
+            "weekly_reset_minutes": reset_minutes_from_iso(gpt_row.get("next_reset_at")),
+            "status": "omniroute",
+            "ok": True,
+        }
+
+    gemini_providers = _providers_from_config(settings.get("gemini_providers"), ["agy", "antigravity"])
+    weekly_rows = [
+        row for provider in gemini_providers
+        if (row_provider := latest.get((provider, "gemini_weekly")))
+        for row in [row_provider]
+    ]
+    model_name = str(settings.get("gemini_model", "")).strip()
+    model_rows = [
+        row for provider in gemini_providers
+        for (row_provider, window), row in latest.items()
+        if row_provider == provider and window.startswith("gemini-")
+        and (not model_name or window == model_name)
+    ]
+    if weekly_rows or model_rows:
+        # Multiple OmniRoute connections can represent different projects.
+        # Showing the most constrained one is safer than hiding a near limit.
+        session = min(model_rows, key=lambda row: float(row.get("remaining_percentage", 100))) if model_rows else None
+        weekly = min(weekly_rows, key=lambda row: float(row.get("remaining_percentage", 100))) if weekly_rows else None
+        result["gemini"] = {
+            "provider": "gemini",
+            "session_percent": quota_used_percent(session.get("remaining_percentage")) if session else None,
+            "weekly_percent": quota_used_percent(weekly.get("remaining_percentage")) if weekly else None,
+            "session_reset_minutes": reset_minutes_from_iso(session.get("next_reset_at")) if session else None,
+            "weekly_reset_minutes": reset_minutes_from_iso(weekly.get("next_reset_at")) if weekly else None,
+            "status": "omniroute",
+            "ok": True,
+        }
+    return result
+
+
+def omniroute_snapshots(settings: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
+    database = Path(str(settings.get("database", "~/.omniroute/storage.sqlite"))).expanduser()
+    if not database.exists():
+        raise AgentError("cache SQLite do OmniRoute não encontrado: %s" % database)
+    max_age = max(60, int(settings.get("max_age_seconds", 600) or 600))
+    modifier = "-%d seconds" % max_age
+    try:
+        uri = "file:%s?mode=ro" % str(database).replace("%", "%25").replace("?", "%3F")
+        connection = sqlite3.connect(uri, uri=True)
+        connection.row_factory = sqlite3.Row
+        rows = [dict(row) for row in connection.execute(
+            "SELECT provider, window_key, remaining_percentage, next_reset_at, created_at "
+            "FROM quota_snapshots WHERE created_at >= datetime('now', ?) "
+            "ORDER BY created_at DESC",
+            (modifier,),
+        )]
+        connection.close()
+    except (OSError, sqlite3.Error) as exc:
+        raise AgentError("falha ao ler cache do OmniRoute: %s" % exc)
+    snapshots = build_omniroute_snapshots(rows, settings)
+    if not snapshots:
+        raise AgentError("OmniRoute não tem quotas recentes no cache")
+    return snapshots
 
 
 def claude_snapshot(provider: Mapping[str, Any]) -> Dict[str, Any]:
@@ -281,18 +446,112 @@ def openai_snapshot(provider: Mapping[str, Any]) -> Dict[str, Any]:
     }
 
 
+def google_access_token(provider: Mapping[str, Any]) -> Optional[str]:
+    env_name = str(provider.get("access_token_env", "GOOGLE_OAUTH_ACCESS_TOKEN"))
+    if os.environ.get(env_name):
+        return os.environ[env_name]
+
+    token = read_keychain(
+        str(provider.get("access_token_keychain_service", "ESP Dashboard Google OAuth Token")),
+        str(provider.get("keychain_account", getpass.getuser())),
+    )
+    if token:
+        return token
+
+    adc_path = Path(str(provider.get("adc_file", "~/.config/gcloud/application_default_credentials.json"))).expanduser()
+    try:
+        adc = json.loads(adc_path.read_text())
+    except (OSError, ValueError):
+        return None
+    if adc.get("type") != "authorized_user":
+        return None
+    refresh_token = adc.get("refresh_token")
+    client_id = adc.get("client_id")
+    client_secret = adc.get("client_secret")
+    if not all(isinstance(value, str) and value for value in (refresh_token, client_id, client_secret)):
+        return None
+    response = http_form(
+        "https://oauth2.googleapis.com/token",
+        {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token",
+        },
+    )
+    access_token = response.get("access_token")
+    return access_token if isinstance(access_token, str) else None
+
+
+def monitoring_total(data: Mapping[str, Any]) -> float:
+    total = 0.0
+    for series in data.get("timeSeries", []):
+        for point in series.get("points", []):
+            value = point.get("value", {})
+            if "int64Value" in value:
+                total += float(value["int64Value"])
+            elif "doubleValue" in value:
+                total += float(value["doubleValue"])
+    return total
+
+
+def monitoring_metric(project_id: str, access_token: str, metric: str,
+                      hours: int) -> Mapping[str, Any]:
+    end = time.time()
+    start = end - max(1, hours) * 60 * 60
+    query = urlencode({
+        "filter": 'metric.type = "%s"' % metric,
+        "interval.startTime": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(start)),
+        "interval.endTime": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(end)),
+        "aggregation.alignmentPeriod": "86400s",
+        "aggregation.perSeriesAligner": "ALIGN_SUM",
+        "pageSize": "1000",
+    })
+    return http_json(
+        "https://monitoring.googleapis.com/v3/projects/%s/timeSeries?%s" % (project_id, query),
+        headers={"Authorization": "Bearer " + access_token},
+    )
+
+
 def gemini_snapshot(provider: Mapping[str, Any]) -> Dict[str, Any]:
     snapshot_file = str(provider.get("snapshot_file", "")).strip()
-    if not snapshot_file:
-        raise AgentError("Gemini requer snapshot_file ou adaptador Cloud Monitoring")
-    path = Path(snapshot_file).expanduser()
-    try:
-        data = json.loads(path.read_text())
-    except (OSError, ValueError) as exc:
-        raise AgentError("snapshot Gemini inválido: %s" % exc)
-    if not isinstance(data, Mapping):
-        raise AgentError("snapshot Gemini precisa ser um objeto JSON")
-    return {"provider": "gemini", **dict(data), "ok": bool(data.get("ok", True))}
+    if snapshot_file:
+        path = Path(snapshot_file).expanduser()
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError) as exc:
+            raise AgentError("snapshot Gemini inválido: %s" % exc)
+        if not isinstance(data, Mapping):
+            raise AgentError("snapshot Gemini precisa ser um objeto JSON")
+        return {"provider": "gemini", **dict(data), "ok": bool(data.get("ok", True))}
+
+    project_id = str(provider.get("project_id", "")).strip()
+    access_token = google_access_token(provider)
+    if not project_id or not access_token:
+        raise AgentError("Gemini requer project_id e OAuth do Google Cloud")
+
+    usage_metric = str(provider.get(
+        "usage_metric",
+        "generativelanguage.googleapis.com/quota/generate_requests_per_model/usage",
+    ))
+    limit_metric = str(provider.get(
+        "limit_metric",
+        "generativelanguage.googleapis.com/quota/generate_requests_per_model/limit",
+    ))
+    hours = int(provider.get("window_hours", 24) or 24)
+    usage = monitoring_total(monitoring_metric(project_id, access_token, usage_metric, hours))
+    limit = monitoring_total(monitoring_metric(project_id, access_token, limit_metric, hours))
+    request_limit = int(provider.get("requests_limit", 0) or 0)
+    effective_limit = request_limit or int(limit)
+    usage_percent = int(round(usage * 100 / effective_limit)) if effective_limit else 0
+    return {
+        "provider": "gemini",
+        "session_percent": max(0, min(100, usage_percent)),
+        "weekly_percent": 0,
+        "requests": str(int(round(usage))),
+        "status": "project-quota",
+        "ok": True,
+    }
 
 
 def collect(provider_name: str, provider: Mapping[str, Any]) -> Dict[str, Any]:
@@ -315,8 +574,21 @@ def run_once(config: Mapping[str, Any]) -> None:
     if not device_url:
         raise AgentError("device_url não configurado")
     providers = config.get("providers", {})
+    updated_from_omniroute = set()
+    omniroute = providers.get("omniroute", {}) if isinstance(providers, Mapping) else {}
+    if isinstance(omniroute, Mapping) and omniroute.get("enabled", False):
+        try:
+            snapshots = omniroute_snapshots(omniroute)
+            for provider_name, snapshot in snapshots.items():
+                post_snapshot(device_url, snapshot)
+                updated_from_omniroute.add(provider_name)
+                log("%s atualizado via OmniRoute" % provider_name)
+        except AgentError as exc:
+            log("omniroute indisponível: %s" % exc)
     for name, provider in providers.items():
         if not isinstance(provider, Mapping) or not provider.get("enabled", False):
+            continue
+        if name == "omniroute" or name in updated_from_omniroute:
             continue
         try:
             snapshot = collect(name, provider)
