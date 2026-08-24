@@ -1,0 +1,21 @@
+{
+  "device_url": "http://192.168.15.64",
+  "interval_seconds": 60,
+  "providers": {
+    "claude": {
+      "enabled": true,
+      "keychain_service": "Claude Code-credentials",
+      "model": "claude-haiku-4-5-20251001"
+    },
+    "openai": {
+      "enabled": false,
+      "admin_key_env": "OPENAI_ADMIN_KEY",
+      "keychain_service": "ESP Dashboard OpenAI Admin Key",
+      "weekly_token_limit": 0
+    },
+    "gemini": {
+      "enabled": false,
+      "snapshot_file": ""
+    }
+  }
+}

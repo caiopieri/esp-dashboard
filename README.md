@@ -73,6 +73,16 @@ Referências de variável usam o formato `{{NOME_DA_VARIAVEL}}`. Os valores não
 
 > O servidor é HTTP local e ainda não possui autenticação. Não faça port-forward da porta 80 nem exponha o dispositivo diretamente à internet.
 
+## Agente de uso no Mac
+
+O repositório inclui um agente leve em [tools/usage_agent/README.md](tools/usage_agent/README.md). Ele roda como tarefa de fundo do macOS, faz somente conexões de saída e envia dados normalizados ao ESP. O Mac não precisa servir páginas nem aceitar conexões externas.
+
+```bash
+./tools/usage_agent/install_macos.sh http://IP_DO_ESP32
+```
+
+As credenciais dos provedores permanecem no Keychain ou no ambiente do Mac. O ESP recebe apenas percentuais, tokens, requisições e status. O mesmo agente poderá ser movido para uma VPS depois.
+
 ## Compilação e gravação
 
 Pré-requisitos: VS Code + PlatformIO ou PlatformIO CLI.
