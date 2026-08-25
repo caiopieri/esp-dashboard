@@ -2,6 +2,7 @@
 #include "NetworkManager.h"
 #include "DeviceLog.h"
 #include "display/DisplayDriver.h"
+#include <ctype.h>
 
 void AppManager::registerApp(App* app) {
     if (app) {
@@ -16,6 +17,42 @@ bool AppManager::isKnownApp(const char* id) const {
         if (strcmp(app->getId(), id) == 0) return true;
     }
     return false;
+}
+
+bool AppManager::validCardId(const char* id) {
+    if (!id || id[0] == '\0' || strlen(id) > 32) return false;
+    for (const char* p = id; *p; ++p) {
+        if (!(isalnum(static_cast<unsigned char>(*p)) || *p == '_' || *p == '-')) return false;
+    }
+    return true;
+}
+
+bool AppManager::validDeclarativeType(const char* type) {
+    if (!type) return false;
+    return strcmp(type, "text") == 0 || strcmp(type, "metric") == 0 ||
+           strcmp(type, "progress") == 0 || strcmp(type, "status") == 0 ||
+           strcmp(type, "clock") == 0 || strcmp(type, "list") == 0 ||
+           strcmp(type, "chart") == 0;
+}
+
+void AppManager::loadDeclarativeApps() {
+    JsonDocument doc;
+    if (deserializeJson(doc, _cardPreferences.getString("config", "")) != DeserializationError::Ok) return;
+    JsonArray cards = doc["cards"].as<JsonArray>();
+    if (cards.isNull()) return;
+
+    for (JsonObject card : cards) {
+        const char* id = card["id"] | "";
+        const char* type = card["type"] | "";
+        if (strcmp(card["kind"] | "", "declarative") != 0 ||
+            !validCardId(id) || !validDeclarativeType(type) || isKnownApp(id)) continue;
+
+        String definition;
+        serializeJson(card, definition);
+        DeclarativeCardApp* app = new DeclarativeCardApp(definition);
+        _declarativeApps.push_back(app);
+        registerApp(app);
+    }
 }
 
 void AppManager::loadCardConfig() {
@@ -112,7 +149,12 @@ String AppManager::getCardConfigJson() {
 
         for (JsonObject stored : storedCards) {
             if (strcmp(stored["id"] | "", app->getId()) != 0) continue;
+            if (stored["kind"].is<const char*>()) card["kind"] = stored["kind"];
+            if (stored["type"].is<const char*>()) card["type"] = stored["type"];
             if (stored["template"].is<const char*>()) card["template"] = stored["template"];
+            if (!stored["data"].isNull()) card["data"].set(stored["data"]);
+            if (!stored["body"].isNull()) card["body"].set(stored["body"]);
+            if (!stored["theme"].isNull()) card["theme"].set(stored["theme"]);
             JsonArray refs = stored["variables"].as<JsonArray>();
             if (!refs.isNull()) {
                 JsonArray outputRefs = card["variables"].to<JsonArray>();
@@ -128,14 +170,21 @@ String AppManager::getCardConfigJson() {
 }
 
 bool AppManager::saveCardConfigJson(const String& json) {
-    if (json.length() == 0 || json.length() > 2048) return false;
+    const size_t maxConfigBytes =
+#if defined(BOARD_HAS_PSRAM)
+        12288;
+#else
+        6144;
+#endif
+    if (json.length() == 0 || json.length() > maxConfigBytes) return false;
 
     JsonDocument doc;
     if (deserializeJson(doc, json) != DeserializationError::Ok) return false;
     JsonArray cards = doc["cards"].as<JsonArray>();
-    if (cards.isNull() || cards.size() == 0 || cards.size() > _registeredApps.size()) return false;
+    if (cards.isNull() || cards.size() == 0 || cards.size() > 16) return false;
 
-    bool seen[8] = {};
+    bool seen[16] = {};
+    size_t activeCount = 0;
     JsonDocument normalized;
     JsonArray normalizedCards = normalized["cards"].to<JsonArray>();
     for (JsonObject card : cards) {
@@ -143,13 +192,18 @@ bool AppManager::saveCardConfigJson(const String& json) {
         int order = card["order"] | -1;
         bool enabled = card["enabled"] | false;
         bool deleted = card["deleted"] | false;
-        if (!isKnownApp(id) || order < 0 || order >= 8) return false;
+        const bool known = isKnownApp(id);
+        const bool declarative = strcmp(card["kind"] | "", "declarative") == 0 || !card["type"].isNull();
+        const char* type = card["type"] | "";
+        if (!validCardId(id) || (!known && !declarative) || order < 0 || order >= 16) return false;
+        if (declarative && (!validDeclarativeType(type) || strlen(card["title"] | "") > 64)) return false;
         if (deleted) enabled = false;
 
         for (JsonObject existing : normalizedCards) {
             if (strcmp(existing["id"] | "", id) == 0) return false;
         }
         if (enabled && seen[order]) return false;
+        if (enabled && ++activeCount > 8) return false;
         if (enabled) seen[order] = true;
 
         JsonObject clean = normalizedCards.add<JsonObject>();
@@ -157,6 +211,38 @@ bool AppManager::saveCardConfigJson(const String& json) {
         clean["enabled"] = enabled;
         clean["deleted"] = deleted;
         clean["order"] = order;
+
+        if (declarative) {
+            clean["kind"] = "declarative";
+            clean["title"] = card["title"] | id;
+            clean["type"] = type;
+            JsonObject inputData = card["data"].as<JsonObject>();
+            JsonObject data = clean["data"].to<JsonObject>();
+            const char* source = inputData["source"] | "static";
+            if (strcmp(source, "static") != 0 && strcmp(source, "runtime") != 0 && strcmp(source, "variable") != 0) return false;
+            data["source"] = source;
+            data["namespace"] = inputData["namespace"] | id;
+            data["key"] = inputData["key"] | "value";
+            data["value"] = inputData["value"] | "--";
+            if (strlen(data["namespace"] | "") > 32 || strlen(data["key"] | "") > 32 || strlen(data["value"] | "") > 256) return false;
+
+            JsonObject inputBody = card["body"].as<JsonObject>();
+            JsonObject body = clean["body"].to<JsonObject>();
+            body["label"] = inputBody["label"] | "";
+            body["unit"] = inputBody["unit"] | "";
+            body["max"] = constrain(inputBody["max"] | 100, 1, 100000);
+            if (strlen(body["label"] | "") > 64 || strlen(body["unit"] | "") > 16) return false;
+            JsonArray inputItems = inputBody["items"].as<JsonArray>();
+            if (!inputItems.isNull()) {
+                if (inputItems.size() > 8) return false;
+                JsonArray items = body["items"].to<JsonArray>();
+                for (const char* item : inputItems) {
+                    if (!item || strlen(item) > 64) return false;
+                    items.add(item);
+                }
+            }
+            if (!card["theme"].isNull()) clean["theme"].set(card["theme"]);
+        }
 
         const char* templateText = card["template"] | "";
         if (strlen(templateText) > 512) return false;
@@ -453,6 +539,7 @@ void AppManager::refreshWifiList() {
 
 void AppManager::init() {
     _cardPreferences.begin("cards", false);
+    loadDeclarativeApps();
     loadCardConfig();
 
     const lv_coord_t screenWidth = lv_disp_get_hor_res(nullptr);

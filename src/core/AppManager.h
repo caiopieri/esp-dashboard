@@ -6,6 +6,7 @@
 #include <Preferences.h>
 #include <lvgl.h>
 #include "App.h"
+#include "DeclarativeCardApp.h"
 
 class AppManager {
 public:
@@ -29,6 +30,7 @@ private:
 
     std::vector<App*> _apps;
     std::vector<App*> _registeredApps;
+    std::vector<DeclarativeCardApp*> _declarativeApps;
     std::vector<lv_obj_t*> _tiles;
     Preferences _cardPreferences;
 
@@ -65,5 +67,8 @@ private:
     void closeWifiPanel();
     void refreshWifiList();
     void loadCardConfig();
+    void loadDeclarativeApps();
     bool isKnownApp(const char* id) const;
+    static bool validDeclarativeType(const char* type);
+    static bool validCardId(const char* id);
 };

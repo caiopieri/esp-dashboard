@@ -21,12 +21,15 @@ O **ESP32-S3 N16R8 com tela JC3248W535EN** tem um perfil de compilação experim
 - 16 MB flash com PSRAM OPI;
 - Arduino_GFX 1.4.9 no driver dessa variante, mantendo LovyanGFX no CYD.
 
-Esse perfil já passa na compilação, mas ainda não foi gravado nem validado no hardware físico. A primeira validação exigirá a placa conectada e um teste específico de display, touch, Wi‑Fi e cartão SD.
+Esse perfil já passa na compilação e teve o firmware universal gravado no hardware
+conectado. Wi‑Fi, painel HTTP, criação de card e ingestão de dados foram
+validados; a validação visual completa de display, touch e cartão SD continua
+separada da validação do contrato universal.
 
 | Perfil | Hardware | Estado | Comando |
 | --- | --- | --- | --- |
 | `esp32-cyd` | ESP32-2432S028R / ILI9341 + XPT2046 | Validado | `pio run -e esp32-cyd` |
-| `esp32-s3-jc3248w535` | ESP32-S3 N16R8 / AXS15231B QSPI + I²C | Compilado; aguardando validação física | `pio run -e esp32-s3-jc3248w535` |
+| `esp32-s3-jc3248w535` | ESP32-S3 N16R8 / AXS15231B QSPI + I²C | Compilado e API validada no hardware | `pio run -e esp32-s3-jc3248w535` |
 
 ## Painel web
 
@@ -52,6 +55,7 @@ GET  /                         painel
 GET  /api/status               status e IP
 GET  /api/config               configuração dos cards
 POST /api/config               salva cards e reinicia
+POST /api/data                 atualiza valores runtime em RAM
 GET  /api/variables            lista somente metadados
 POST /api/variables            cria ou atualiza uma variável
 POST /api/wifi/scan            inicia scan
@@ -110,6 +114,12 @@ LovyanGFX + XPT2046 (CYD)
 ```
 
 O servidor web é mantido leve e as operações de rádio são agendadas fora do callback HTTP para não interromper o loop do LVGL. A configuração é validada e limitada antes de ser persistida.
+
+Para o catálogo de tipos, limites, contrato JSON e exemplos de agentes, leia
+[docs/universal-card-system.md](docs/universal-card-system.md). A primeira
+fatia declarativa aceita `text`, `metric`, `progress`, `status`, `clock`,
+`list` e `chart`; cards nativos continuam disponíveis para comportamento
+complexo.
 
 ## Estrutura
 
