@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://desk-assistant.local/schema/card-package-v1.json",
+  "title": "Desk Assistant community card package v1",
+  "type": "object",
+  "required": ["packageVersion", "kind", "minimumSchemaVersion", "compatibility", "card"],
+  "properties": {
+    "packageVersion": {"const": 1},
+    "kind": {"const": "desk-assistant-card"},
+    "minimumSchemaVersion": {"const": 1},
+    "compatibility": {
+      "type": "object",
+      "required": ["displays"],
+      "properties": {"displays": {"type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true, "items": {"enum": ["320x240", "480x320", "e-ink"]}}},
+      "additionalProperties": false
+    },
+    "card": {"$ref": "card-manifest-v1.json"}
+  },
+  "additionalProperties": false
+}

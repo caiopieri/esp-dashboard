@@ -24,6 +24,8 @@ public:
     void openWifiPanel();
     String getCardConfigJson();
     bool saveCardConfigJson(const String& json);
+    String getCarouselSettingsJson() const;
+    bool saveCarouselSettingsJson(const String& json);
 
 private:
     AppManager() = default;
@@ -53,6 +55,9 @@ private:
 
     int _currentIndex = -1;
     unsigned long _lastUpdate = 0;
+    bool _autoSlide = false;
+    uint32_t _slideIntervalSeconds = 30;
+    unsigned long _lastSlideAt = 0;
 
     static void onTileChangedEvent(lv_event_t* e);
     static void onWifiNetworkClicked(lv_event_t* e);

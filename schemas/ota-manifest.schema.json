@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://desk-assistant.local/schema/ota-manifest-v1.json",
+  "title": "Desk Assistant OTA manifest v1",
+  "type": "object",
+  "required": ["schemaVersion", "product", "version", "board", "url", "sha256", "signature"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "product": {"const": "desk-assistant"},
+    "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+([+-][A-Za-z0-9.-]+)?$"},
+    "board": {"enum": ["esp32-cyd", "esp32-s3-jc3248w535"]},
+    "url": {"type": "string", "format": "uri", "pattern": "^https://"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+    "signature": {"type": "string", "minLength": 16},
+    "minBootloaderVersion": {"type": "string"},
+    "releaseNotes": {"type": "string", "maxLength": 2048}
+  },
+  "additionalProperties": false
+}

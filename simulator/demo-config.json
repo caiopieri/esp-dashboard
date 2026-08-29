@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "cards": [
+    {
+      "id": "claude_usage",
+      "title": "Claude",
+      "kind": "declarative",
+      "type": "metric",
+      "enabled": true,
+      "deleted": false,
+      "order": 0,
+      "data": {"source": "static", "namespace": "claude", "key": "value", "value": "6"},
+      "body": {"label": "Tokens hoje", "unit": "%", "max": 100},
+      "theme": {"accent": "#74f0c1"}
+    },
+    {
+      "id": "wifi_status",
+      "title": "Wi-Fi",
+      "kind": "declarative",
+      "type": "status",
+      "enabled": true,
+      "deleted": false,
+      "order": 1,
+      "data": {"source": "static", "namespace": "wifi", "key": "value", "value": "Conectado"},
+      "body": {"label": "-63 dBm", "unit": "", "max": 100},
+      "theme": {"accent": "#89b4fa"}
+    },
+    {
+      "id": "temperature",
+      "title": "Temperatura",
+      "kind": "declarative",
+      "type": "progress",
+      "enabled": true,
+      "deleted": false,
+      "order": 2,
+      "data": {"source": "static", "namespace": "room", "key": "temperature", "value": "24"},
+      "body": {"label": "Sala", "unit": "°C", "max": 40},
+      "theme": {"accent": "#f9e2af"}
+    }
+  ]
+}

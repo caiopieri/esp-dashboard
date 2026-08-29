@@ -36,9 +36,15 @@ bool JC3248W535Touch::read(JC3248TouchPoint& point) {
 
     Wire.beginTransmission(JC3248_TOUCH_ADDRESS);
     Wire.write(READ_COMMAND, READ_COMMAND_LENGTH);
-    if (Wire.endTransmission(false) != 0) {
+    // The AXS15231B needs a completed write transaction before it prepares
+    // the touch frame. A repeated-start read can return a stable 0xD1 noise
+    // frame on this board revision, so use STOP and the controller's short
+    // processing interval before requesting the response.
+    if (Wire.endTransmission() != 0) {
         return holdContact();
     }
+
+    delayMicroseconds(50);
 
     if (Wire.requestFrom(JC3248_TOUCH_ADDRESS, RESPONSE_LENGTH) != RESPONSE_LENGTH) {
         return holdContact();

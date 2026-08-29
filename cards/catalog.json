@@ -51,6 +51,16 @@
       "providers": [],
       "requiredVariables": [],
       "boards": ["esp32-cyd", "esp32-s3-jc3248w535"]
+    },
+    {
+      "id": "temperature_room",
+      "title": "Temperatura",
+      "kind": "declarative-package",
+      "source": "packages/temperature-room.card.json",
+      "providers": [],
+      "requiredVariables": [],
+      "boards": ["esp32-cyd", "esp32-s3-jc3248w535", "e-ink"],
+      "packageVersion": 1
     }
   ]
 }

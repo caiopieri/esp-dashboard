@@ -155,6 +155,7 @@ String AppManager::getCardConfigJson() {
             if (!stored["data"].isNull()) card["data"].set(stored["data"]);
             if (!stored["body"].isNull()) card["body"].set(stored["body"]);
             if (!stored["theme"].isNull()) card["theme"].set(stored["theme"]);
+            if (!stored["action"].isNull()) card["action"].set(stored["action"]);
             JsonArray refs = stored["variables"].as<JsonArray>();
             if (!refs.isNull()) {
                 JsonArray outputRefs = card["variables"].to<JsonArray>();
@@ -242,6 +243,22 @@ bool AppManager::saveCardConfigJson(const String& json) {
                 }
             }
             if (!card["theme"].isNull()) clean["theme"].set(card["theme"]);
+
+            // Action metadata is inert on the ESP. It is preserved so a
+            // future touch renderer can hand the allowlisted action ID to the
+            // local companion without ever accepting a command from a card.
+            JsonObject inputAction = card["action"].as<JsonObject>();
+            if (!inputAction.isNull()) {
+                const char* actionId = inputAction["id"] | "";
+                const char* actionLabel = inputAction["label"] | "Executar";
+                if (!validCardId(actionId) || strlen(actionLabel) > 32 ||
+                    (!inputAction["confirmationRequired"].isNull() &&
+                     !inputAction["confirmationRequired"].is<bool>())) return false;
+                JsonObject action = clean["action"].to<JsonObject>();
+                action["id"] = actionId;
+                action["label"] = actionLabel;
+                action["confirmationRequired"] = inputAction["confirmationRequired"] | true;
+            }
         }
 
         const char* templateText = card["template"] | "";
@@ -272,6 +289,36 @@ bool AppManager::saveCardConfigJson(const String& json) {
     serializeJson(normalized, normalizedJson);
     _cardPreferences.putString("config", normalizedJson);
     LOG_INFO("Card config saved, reboot required");
+    return true;
+}
+
+String AppManager::getCarouselSettingsJson() const {
+    JsonDocument doc;
+    doc["schemaVersion"] = 1;
+    doc["autoSlide"] = _autoSlide;
+    doc["intervalSeconds"] = _slideIntervalSeconds;
+    String output;
+    serializeJson(doc, output);
+    return output;
+}
+
+bool AppManager::saveCarouselSettingsJson(const String& json) {
+    if (json.length() == 0 || json.length() > 256) return false;
+
+    JsonDocument doc;
+    if (deserializeJson(doc, json) != DeserializationError::Ok) return false;
+    if (!doc["autoSlide"].is<bool>() || !doc["intervalSeconds"].is<int>()) return false;
+
+    const uint32_t intervalSeconds = doc["intervalSeconds"].as<uint32_t>();
+    if (intervalSeconds < 5 || intervalSeconds > 3600) return false;
+
+    _autoSlide = doc["autoSlide"].as<bool>();
+    _slideIntervalSeconds = intervalSeconds;
+    _lastSlideAt = millis();
+    _cardPreferences.putBool("auto_slide", _autoSlide);
+    _cardPreferences.putUInt("slide_secs", _slideIntervalSeconds);
+    LOG_INFO("Carousel settings saved auto=%d interval=%lu", _autoSlide,
+             static_cast<unsigned long>(_slideIntervalSeconds));
     return true;
 }
 
@@ -539,6 +586,9 @@ void AppManager::refreshWifiList() {
 
 void AppManager::init() {
     _cardPreferences.begin("cards", false);
+    _autoSlide = _cardPreferences.getBool("auto_slide", false);
+    _slideIntervalSeconds = constrain(_cardPreferences.getUInt("slide_secs", 30), 5U, 3600U);
+    _lastSlideAt = millis();
     loadDeclarativeApps();
     loadCardConfig();
 
@@ -641,6 +691,7 @@ void AppManager::switchToApp(size_t index) {
         lv_obj_set_tile_id(_tileview, index, 0, LV_ANIM_OFF);
 #endif
         handleTileChange(index);
+        _lastSlideAt = millis();
     }
 }
 
@@ -666,6 +717,11 @@ void AppManager::update() {
 
     if (_wifiPanel && !_wifiPasswordView && NetworkManager::getInstance().pollWifiScan()) {
         refreshWifiList();
+    }
+
+    if (!_wifiPanel && _autoSlide && _apps.size() > 1 &&
+        millis() - _lastSlideAt >= _slideIntervalSeconds * 1000UL) {
+        switchToApp(static_cast<size_t>((_currentIndex + 1) % _apps.size()));
     }
 
     if (_currentIndex >= 0 && _currentIndex < (int)_apps.size()) {

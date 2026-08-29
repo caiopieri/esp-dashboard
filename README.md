@@ -33,9 +33,11 @@ separada da validação do contrato universal.
 
 ## Painel web
 
-Depois que o dispositivo conectar ao Wi‑Fi, abra no navegador:
+Depois que o dispositivo conectar ao Wi‑Fi, abra no navegador o endereço local
+anunciado pelo ESP (ou o IP, caso a rede não resolva mDNS):
 
 ```text
+http://desk-assistant-XXXXXXXX.local/
 http://IP_DO_ESP32/
 ```
 
@@ -48,13 +50,35 @@ O painel permite:
 - salvar variáveis persistentes, inclusive segredos;
 - consultar logs e o schema da API para agentes.
 
+Para editar e visualizar cards em uma interface maior, use o [Card Studio](web/card-studio.html):
+
+```bash
+python3 -m http.server 4173 --directory web
+```
+
+Abra `http://127.0.0.1:4173/card-studio.html`. Ele simula a tela em 320×240,
+permite testar o carrossel e exporta o mesmo JSON validado pelo firmware.
+Consulte [docs/product-architecture.md](docs/product-architecture.md) para a
+arquitetura de BLE, OTA, IA, ações no computador e e-ink.
+
+Para executar o LVGL real no computador, consulte [simulator/README.md](simulator/README.md).
+O simulador usa SDL2, aceita o JSON exportado pelo Card Studio e mantém a
+mesma resolução lógica do firmware.
+
+Para preparar rascunhos por IA sem colocar credenciais no ESP, consulte
+[tools/companion/README.md](tools/companion/README.md). O companion devolve um
+manifesto validado para o preview; publicar no dispositivo continua sendo uma
+ação explícita do usuário.
+
 Endpoints principais:
 
 ```text
 GET  /                         painel
-GET  /api/status               status e IP
+GET  /api/status               status, IP e hostname local
 GET  /api/config               configuração dos cards
 POST /api/config               salva cards e reinicia
+GET  /api/settings             comportamento do carrossel
+POST /api/settings             salva deslize automático e intervalo
 POST /api/data                 atualiza valores runtime em RAM
 GET  /api/variables            lista somente metadados
 POST /api/variables            cria ou atualiza uma variável
@@ -62,6 +86,10 @@ POST /api/wifi/scan            inicia scan
 GET  /api/wifi/scan            consulta o scan
 POST /api/wifi                 solicita conexão
 GET  /api/schema               contrato para agentes
+GET  /api/provisioning         estado do onboarding BLE/SoftAP
+GET  /api/firmware             versão e política do OTA
+GET  /api/events               evento de ação pendente (S3)
+POST /api/events/ack           confirma entrega do evento
 GET  /logs                     log circular do dispositivo
 ```
 
@@ -76,6 +104,19 @@ curl -X POST http://IP_DO_ESP32/api/variables \
 Referências de variável usam o formato `{{NOME_DA_VARIAVEL}}`. Os valores não são retornados pelos endpoints de leitura.
 
 > O servidor é HTTP local e ainda não possui autenticação. Não faça port-forward da porta 80 nem exponha o dispositivo diretamente à internet.
+
+No primeiro boot sem credenciais, o ESP32-S3 inicia o onboarding BLE usando o
+provisionamento seguro do ESP-IDF. O nome do serviço e o PoP aparecem no log
+serial (e o QR é impresso pelo `WiFiProv`). É necessário usar um aplicativo
+compatível com `WiFiProv`: BLE não abre uma página web automaticamente. Depois
+que a rede é configurada, o firmware reutiliza as credenciais persistidas e
+anuncia o portal por mDNS como `desk-assistant-XXXXXXXX.local`. O CYD usa um AP
+local leve chamado `PROV_XXXXXXXX`, com a mesma sequência como senha, para não
+estourar sua RAM.
+
+O OTA atual é somente para desenvolvimento na rede local via ArduinoOTA. O
+endpoint de firmware deixa explícito quando não há autenticação e que ainda
+faltam assinatura, partições A/B, health check e rollback para produção.
 
 ## Agente de uso no Mac
 
@@ -115,6 +156,11 @@ LovyanGFX + XPT2046 (CYD)
 
 O servidor web é mantido leve e as operações de rádio são agendadas fora do callback HTTP para não interromper o loop do LVGL. A configuração é validada e limitada antes de ser persistida.
 
+As configurações do carrossel ficam separadas das definições dos cards:
+`GET /api/settings` retorna `autoSlide` e `intervalSeconds`, enquanto `POST
+/api/settings` aceita intervalos entre 5 e 3600 segundos. O avanço automático
+fica desativado por padrão e é suspenso enquanto o painel de Wi-Fi está aberto.
+
 Para o catálogo de tipos, limites, contrato JSON e exemplos de agentes, leia
 [docs/universal-card-system.md](docs/universal-card-system.md). A primeira
 fatia declarativa aceita `text`, `metric`, `progress`, `status`, `clock`,
@@ -135,12 +181,12 @@ Na variante JC3248W535EN, a camada de display troca apenas o backend físico por
 ## Roadmap
 
 - autenticação/token para o painel web;
-- motor genérico de cards com templates e fontes de dados;
-- adaptador para cards que consultam APIs, incluindo uso de variáveis secretas;
 - imagens e temas via LittleFS com limites de tamanho;
-- validação física da variante `esp32-s3-jc3248w535`;
 - suporte ao cartão SD da variante S3;
-- testes automatizados para validação de JSON e configuração persistente.
+- OTA de produção com imagem assinada, rollback e migração de schema;
+- biblioteca comunitária remota com assinatura e compatibilidade por placa;
+- aplicativo/interface Web Bluetooth customizada para o portal de provisionamento;
+- perfil de renderização e-ink com política de refresh.
 
 ## Comunidade
 

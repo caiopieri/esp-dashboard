@@ -5,5 +5,8 @@
 *.log
 __pycache__/
 *.pyc
+simulator/build/
 src/config.local.h
+platformio_override.ini
+tools/companion/__pycache__/
 secrets/

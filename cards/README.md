@@ -17,6 +17,15 @@ Além dos built-ins, o painel pode criar cards declarativos com os tipos
 definidos por JSON validado, usam valor fixo, variável persistente ou snapshot
 runtime enviado por `/api/data`, e não exigem recompilação.
 
+Cards compartilháveis usam o envelope versionado definido em
+[`schemas/card-package.schema.json`](../schemas/card-package.schema.json). O
+Card Studio exporta esse formato e o companion valida a compatibilidade de
+placa antes de uma futura publicação no catálogo.
+
+Há um exemplo em [`packages/temperature-room.card.json`](packages/temperature-room.card.json).
+Ele pode ser importado diretamente no Card Studio para testar o fluxo de
+biblioteca → preview → publicação.
+
 Os cards acima são `built-in`: o código deles é compilado no firmware em
 `src/apps/`. O painel web pode ativar, desativar, ordenar, excluir e restaurar
 esses cards, mas não executa código enviado por JSON. Isso mantém o dispositivo
@@ -30,6 +39,14 @@ seguro e previsível.
 4. Registre-o em `src/main.cpp` e atualize `cards/catalog.json`.
 5. Compile os perfis `esp32-cyd` e `esp32-s3-jc3248w535` antes de abrir o PR.
 
+Para um card declarativo compartilhável, prefira um pacote em `cards/packages/`
+e valide-o com `POST /api/cards/package/validate` antes de catalogá-lo.
+
 Um manifesto descreve o card; ele não é um plugin executável. Apps nativos só
 aceitam IDs compilados e registrados, enquanto cards declarativos passam pelo
 renderer universal com limites de tamanho e de memória.
+
+Um card também pode declarar `action: {"id":"..."}`. O ID é apenas uma
+referência; a ação real precisa existir no companion local, ser allowlisted e
+passar por confirmação. Nunca coloque comandos, scripts ou URLs arbitrárias no
+manifesto.

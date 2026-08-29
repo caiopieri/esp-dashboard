@@ -4,7 +4,13 @@
 #include "DataStore.h"
 #include "ProviderUsage.h"
 #include "VariableStore.h"
+#include "ProvisioningManager.h"
+#include "ActionEventStore.h"
+#include "config.h"
 #include <ArduinoJson.h>
+#if defined(BOARD_JC3248W535EN)
+#include <ESPmDNS.h>
+#endif
 #include <time.h>
 
 static const char CONFIG_PAGE[] PROGMEM = R"HTML(
@@ -32,6 +38,7 @@ a{color:#89dceb}.pill{padding:4px 8px;border-radius:12px;background:#313244;font
 <button id="export" class="secondary">Exportar JSON</button>
 <input id="import" type="file" accept="application/json"><button id="import-btn" class="secondary">Importar JSON</button>
 <p id="card-msg" class="muted"></p></section>
+<section><h2>Comportamento do carrossel</h2><label><input id="auto-slide" type="checkbox" style="width:auto"> avançar automaticamente</label><input id="slide-seconds" type="number" min="5" max="3600" placeholder="Intervalo em segundos"><button id="save-settings" class="secondary">Salvar comportamento</button><p id="settings-msg" class="muted">O intervalo deve ficar entre 5 e 3600 segundos.</p></section>
 <section><h2>Novo card universal</h2><p class="muted">Crie um card declarativo sem recompilar. Use “runtime” para dados enviados por <code>POST /api/data</code>, “variável” para valores salvos ou “fixo” para texto local.</p>
 <input id="new-id" placeholder="ID (ex.: temperatura_sala)"><input id="new-title" placeholder="Título"><select id="new-type"><option value="metric">Métrica</option><option value="text">Texto</option><option value="progress">Progresso</option><option value="status">Status</option><option value="clock">Relógio</option><option value="list">Lista</option><option value="chart">Gráfico compacto</option></select>
 <select id="new-source"><option value="runtime">Fonte runtime</option><option value="variable">Variável</option><option value="static">Valor fixo</option></select><input id="new-key" placeholder="Chave ou namespace"><input id="new-value" placeholder="Valor inicial / itens"><input id="new-unit" placeholder="Unidade (%, °C, R$)"><button id="create-card" class="secondary">Adicionar à configuração</button><p id="new-card-msg" class="muted"></p></section>
@@ -41,10 +48,10 @@ a{color:#89dceb}.pill{padding:4px 8px;border-radius:12px;background:#313244;font
 <div id="variables" class="muted"></div><p id="var-msg" class="muted"></p></section>
 <section><h2>Diagnóstico</h2><a href="/logs" target="_blank">Abrir logs</a> · <a href="/api/schema" target="_blank">Schema para agentes</a></section>
 <script>
-const $=id=>document.getElementById(id);let config=null;
+const $=id=>document.getElementById(id);let config=null;let settings=null;
 async function api(url,opt={}){const r=await fetch(url,opt);const t=await r.text();let d;try{d=JSON.parse(t)}catch{d={raw:t}}if(!r.ok)throw Error(d.error||t||r.status);return d}
 function message(id,text,error=false){$(id).textContent=text;$(id).className=error?'error':'muted'}
-async function load(){try{const [s,c,v]=await Promise.all([api('/api/status'),api('/api/config'),api('/api/variables')]);$('status').textContent=s.connected?'Wi‑Fi '+s.ip:'Offline';config=c;renderCards();renderVars(v.variables)}catch(e){message('card-msg',e.message,true)}}
+async function load(){try{const [s,c,v,carousel]=await Promise.all([api('/api/status'),api('/api/config'),api('/api/variables'),api('/api/settings')]);$('status').textContent=s.connected?'Wi‑Fi '+s.ip:'Offline';config=c;settings=carousel;$('auto-slide').checked=!!carousel.autoSlide;$('slide-seconds').value=carousel.intervalSeconds;renderCards();renderVars(v.variables)}catch(e){message('card-msg',e.message,true)}}
 function renderCards(){const host=$('cards');host.textContent='';(config.cards||[]).forEach(c=>{const row=document.createElement('div');row.className='row';row.dataset.id=c.id;row.dataset.deleted=c.deleted?'1':'0';const check=document.createElement('input');check.type='checkbox';check.checked=!!c.enabled&&!c.deleted;check.disabled=!!c.deleted;check.style.width='auto';const label=document.createElement('label');label.textContent=(c.title||c.id)+' · '+c.id;const order=document.createElement('input');order.type='number';order.min=0;order.max=7;order.value=c.order;order.className='order';const remove=document.createElement('button');remove.className='remove';remove.textContent=c.deleted?'Restaurar':'Excluir';remove.onclick=()=>{const deleted=row.dataset.deleted!=='1';row.dataset.deleted=deleted?'1':'0';check.disabled=deleted;check.checked=!deleted;remove.textContent=deleted?'Restaurar':'Excluir';row.classList.toggle('deleted',deleted)};row.classList.toggle('deleted',!!c.deleted);row.append(check,label,order,remove);host.append(row)})}
 function renderVars(vars){const host=$('variables');host.textContent='';vars.forEach(v=>{const p=document.createElement('p');p.textContent=v.name+' · '+(v.secret?'secreta':'texto')+' · '+(v.configured?'configurada':'vazia');host.append(p)})}
 function createCard(){const id=$('new-id').value.trim();const title=$('new-title').value.trim();const type=$('new-type').value;const source=$('new-source').value;const key=$('new-key').value.trim();const value=$('new-value').value;const unit=$('new-unit').value.trim();if(!/^[A-Za-z0-9_-]{1,32}$/.test(id)||!title)return message('new-card-msg','ID e título são obrigatórios; use apenas A-Z, 0-9, _ ou -',true);if((config.cards||[]).some(c=>c.id===id))return message('new-card-msg','esse ID já existe',true);const card={id,title,kind:'declarative',type,enabled:true,deleted:false,order:config.cards.length,data:{source,namespace:source==='runtime'?(key||id):id,key:source==='runtime'?'value':(key||'value'),value:source==='static'?value:'--'},body:{label:title,unit,max:100}};if(type==='list'&&value)card.body.items=value.split(',').map(x=>x.trim()).filter(Boolean).slice(0,8);config.cards.push(card);renderCards();message('new-card-msg','card adicionado; clique em “Salvar cards e reiniciar”')}
@@ -54,11 +61,12 @@ async function saveCards(){try{const rows=[...document.querySelectorAll('#cards 
 function exportConfig(){const blob=new Blob([JSON.stringify(config,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='cyd-cards.json';a.click();URL.revokeObjectURL(a.href)}
 async function importConfig(){const f=$('import').files[0];if(!f)return message('card-msg','selecione um JSON',true);try{const d=JSON.parse(await f.text());await api('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});message('card-msg','JSON salvo; reiniciando...')}catch(e){message('card-msg',e.message,true)}}
 async function saveVar(){try{await api('/api/variables',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:$('var-name').value,value:$('var-value').value,secret:$('var-secret').checked})});message('var-msg','variável salva');$('var-value').value='';load()}catch(e){message('var-msg',e.message,true)}}
-$('scan').onclick=scan;$('connect').onclick=connect;$('save-cards').onclick=saveCards;$('create-card').onclick=createCard;$('export').onclick=exportConfig;$('import-btn').onclick=importConfig;$('save-var').onclick=saveVar;load();
+async function saveSettings(){try{await api('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({autoSlide:$('auto-slide').checked,intervalSeconds:Number($('slide-seconds').value)})});message('settings-msg','comportamento salvo')}catch(e){message('settings-msg',e.message,true)}}
+$('scan').onclick=scan;$('connect').onclick=connect;$('save-cards').onclick=saveCards;$('create-card').onclick=createCard;$('export').onclick=exportConfig;$('import-btn').onclick=importConfig;$('save-var').onclick=saveVar;$('save-settings').onclick=saveSettings;load();
 </script></body></html>
 )HTML";
 
-static const char API_SCHEMA[] PROGMEM = R"JSON({"name":"cyd-smart-display","version":1,"endpoints":{"config":{"get":"GET /api/config","save":"POST /api/config","body":{"cards":[{"id":"temperature_sala","title":"Temperatura","kind":"declarative","type":"metric","enabled":true,"deleted":false,"order":0,"data":{"source":"runtime|variable|static","namespace":"sala","key":"temperature","value":"--"},"body":{"label":"Sala","unit":"°C","max":100},"theme":{"accent":"#74F0C1"}}]}},"data":{"push":"POST /api/data","body":{"namespace":"sala","values":{"temperature":"23.5","humidity":"55"}}},"usage":{"push":"POST /api/usage","body":{"provider":"gemini|chatgpt|claude","session_percent":45,"weekly_percent":28,"tokens":"120k","requests":"340","session_reset_minutes":120,"weekly_reset_minutes":7200,"status":"ok","ok":true}},"variables":{"list":"GET /api/variables","upsert":"POST /api/variables","body":{"name":"A_Z_NAME","value":"secret-or-text","secret":true}},"wifi":{"scan_start":"POST /api/wifi/scan","scan_poll":"GET /api/wifi/scan","connect":"POST /api/wifi"}},"rules":{"declarative_types":["text","metric","progress","status","clock","list","chart"],"max_active_cards":8,"max_card_definitions":16,"max_runtime_values_on_cyd":16,"variable_name":"^[A-Za-z0-9_]{1,32}$","max_variables":16,"max_value_length":512,"secret_values_never_returned":true,"card_changes_require_restart":true,"at_least_one_enabled_card":true,"deleted_cards_are_tombstones":true},"provider_cards":{"gemini":["GEMINI_USAGE_PERCENT","GEMINI_WEEKLY_PERCENT","GEMINI_TOKENS","GEMINI_REQUESTS"],"chatgpt":["CHATGPT_USAGE_PERCENT","CHATGPT_WEEKLY_PERCENT","CHATGPT_TOKENS","CHATGPT_REQUESTS"],"claude":["CLAUDE_USAGE_PERCENT","CLAUDE_WEEKLY_PERCENT","CLAUDE_TOKENS","CLAUDE_REQUESTS"]},"templates":"Use {{VARIABLE_NAME}} in card template fields; runtime consumers should resolve them through VariableStore."})JSON";
+static const char API_SCHEMA_V2[] PROGMEM = R"JSON({"name":"desk-assistant","version":2,"endpoints":{"config":{"get":"GET /api/config","save":"POST /api/config"},"settings":{"get":"GET /api/settings","save":"POST /api/settings","body":{"autoSlide":true,"intervalSeconds":30}},"data":{"push":"POST /api/data"},"usage":{"push":"POST /api/usage"},"variables":{"list":"GET /api/variables","upsert":"POST /api/variables"},"wifi":{"scan_start":"POST /api/wifi/scan","scan_poll":"GET /api/wifi/scan","connect":"POST /api/wifi"},"provisioning":{"get":"GET /api/provisioning"},"firmware":{"get":"GET /api/firmware"},"events":{"poll":"GET /api/events","ack":"POST /api/events/ack"},"diagnostics":{"status":"GET /api/status","logs":"GET /logs"}},"rules":{"schemaVersion":1,"declarative_types":["text","metric","progress","status","clock","list","chart"],"max_active_cards":8,"max_card_definitions":16,"max_runtime_values":16,"card_action":{"id":"allowlisted companion action only","confirmationRequired":true},"secret_values_never_returned":true,"card_changes_require_restart":true,"at_least_one_enabled_card":true,"deleted_cards_are_tombstones":true,"ota":"development ArduinoOTA; production requires signed A/B image and rollback"},"provider_cards":{"gemini":["GEMINI_USAGE_PERCENT","GEMINI_WEEKLY_PERCENT","GEMINI_TOKENS","GEMINI_REQUESTS"],"chatgpt":["CHATGPT_USAGE_PERCENT","CHATGPT_WEEKLY_PERCENT","CHATGPT_TOKENS","CHATGPT_REQUESTS"],"claude":["CLAUDE_USAGE_PERCENT","CLAUDE_WEEKLY_PERCENT","CLAUDE_TOKENS","CLAUDE_REQUESTS"]}})JSON";
 
 void NetworkManager::begin(const char* ssid, const char* password) {
     _preferences.begin("wifi", false);
@@ -69,18 +77,52 @@ void NetworkManager::begin(const char* ssid, const char* password) {
     String configuredSSID = savedSSID.length() > 0 ? savedSSID : String(ssid ? ssid : "");
     String configuredPassword = savedSSID.length() > 0 ? savedPassword : String(password ? password : "");
 
+    // WiFiProv persists credentials in the Arduino/ESP-IDF Wi-Fi store, not
+    // in this manager's private Preferences namespace. Reuse those retained
+    // credentials after a BLE onboarding instead of starting provisioning on
+    // every reboot. Calling WiFi.begin() without arguments tells the core to
+    // use that retained profile without exposing the password to the app.
+    const String retainedSSID = WiFi.SSID();
+    const bool retainedCredentialsAvailable =
+        savedSSID.length() == 0 && retainedSSID.length() > 0 &&
+        retainedSSID != "SEU_WIFI_AQUI";
+
     // Ignore the template values from config.h until the user chooses a network.
-    if (configuredSSID.length() > 0 && configuredSSID != "SEU_WIFI_AQUI") {
-        WiFi.begin(configuredSSID.c_str(), configuredPassword.c_str());
-        LOG_INFO("WiFi connecting to %s", configuredSSID.c_str());
+    const bool applicationCredentialsAvailable =
+        (configuredSSID.length() > 0 && configuredSSID != "SEU_WIFI_AQUI") ||
+        retainedCredentialsAvailable;
+    if (applicationCredentialsAvailable) {
+        if (retainedCredentialsAvailable) {
+            WiFi.begin();
+            LOG_INFO("WiFi connecting with credentials retained by WiFiProv for %s", retainedSSID.c_str());
+        } else {
+            WiFi.begin(configuredSSID.c_str(), configuredPassword.c_str());
+            LOG_INFO("WiFi connecting to %s", configuredSSID.c_str());
+        }
         _connecting = true;
         _connectStarted = millis();
     } else {
         LOG_INFO("WiFi has no saved network configured");
     }
 
+#if defined(BOARD_JC3248W535EN)
+    String mac = WiFi.macAddress();
+    mac.replace(":", "");
+    mac.toLowerCase();
+    if (mac.length() < 8) mac = "00000000";
+    _mdnsHostname = "desk-assistant-" + mac.substring(mac.length() - 8);
+#endif
+
+    ProvisioningManager::getInstance().begin(applicationCredentialsAvailable);
+
     // Setup ArduinoOTA
     ArduinoOTA.setHostname("cyd-smart-display");
+#if defined(DESK_OTA_PASSWORD)
+    ArduinoOTA.setPassword(DESK_OTA_PASSWORD);
+    LOG_INFO("ArduinoOTA authentication enabled");
+#else
+    LOG_INFO("ArduinoOTA development mode: authentication disabled");
+#endif
 
     ArduinoOTA.onStart([]() {
         String type;
@@ -111,16 +153,69 @@ void NetworkManager::begin(const char* ssid, const char* password) {
 
     ArduinoOTA.begin();
 
+    // The standalone Card Studio runs on the workstation, so it needs to call
+    // the device API from another origin. This is intentionally scoped to the
+    // local development portal; authentication/token protection must be added
+    // before exposing the device beyond the trusted LAN.
+    _webServer.enableCORS(true);
+
     _webServer.on("/", HTTP_GET, [this]() {
         _webServer.send_P(200, "text/html; charset=utf-8", CONFIG_PAGE);
     });
 
     _webServer.on("/api/schema", HTTP_GET, [this]() {
-        _webServer.send_P(200, "application/json; charset=utf-8", API_SCHEMA);
+        _webServer.send_P(200, "application/json; charset=utf-8", API_SCHEMA_V2);
+    });
+
+    _webServer.on("/api/provisioning", HTTP_GET, [this]() {
+        _webServer.send(200, "application/json; charset=utf-8", ProvisioningManager::getInstance().getInfoJson());
+    });
+
+    _webServer.on("/api/events", HTTP_GET, [this]() {
+#if defined(BOARD_JC3248W535EN)
+        _webServer.send(200, "application/json; charset=utf-8", ActionEventStore::getInstance().getJson());
+#else
+        _webServer.send(200, "application/json; charset=utf-8", "{\"schemaVersion\":1,\"pending\":false}");
+#endif
+    });
+
+    _webServer.on("/api/events/ack", HTTP_POST, [this]() {
+#if defined(BOARD_JC3248W535EN)
+        if (!_webServer.hasArg("plain") || _webServer.arg("plain").length() > 128) {
+            _webServer.send(413, "application/json", "{\"error\":\"event ack too large\"}");
+            return;
+        }
+        JsonDocument doc;
+        if (deserializeJson(doc, _webServer.arg("plain")) != DeserializationError::Ok ||
+            doc["sequence"].isNull() ||
+            (!doc["sequence"].is<int>() && !doc["sequence"].is<unsigned int>() &&
+             !doc["sequence"].is<long>() && !doc["sequence"].is<unsigned long>())) {
+            _webServer.send(400, "application/json", "{\"error\":\"invalid event ack\"}");
+            return;
+        }
+        const bool acknowledged = ActionEventStore::getInstance().acknowledge(doc["sequence"].as<uint32_t>());
+        _webServer.send(acknowledged ? 200 : 409, "application/json",
+                        acknowledged ? "{\"acknowledged\":true}" : "{\"error\":\"unknown event sequence\"}");
+#else
+        _webServer.send(409, "application/json", "{\"error\":\"events unavailable on this board\"}");
+#endif
     });
 
     _webServer.on("/api/config", HTTP_GET, [this]() {
         _webServer.send(200, "application/json; charset=utf-8", AppManager::getInstance().getCardConfigJson());
+    });
+
+    _webServer.on("/api/settings", HTTP_GET, [this]() {
+        _webServer.send(200, "application/json; charset=utf-8", AppManager::getInstance().getCarouselSettingsJson());
+    });
+
+    _webServer.on("/api/settings", HTTP_POST, [this]() {
+        if (!_webServer.hasArg("plain") ||
+            !AppManager::getInstance().saveCarouselSettingsJson(_webServer.arg("plain"))) {
+            _webServer.send(400, "application/json", "{\"error\":\"invalid carousel settings\"}");
+            return;
+        }
+        _webServer.send(200, "application/json", "{\"saved\":true}");
     });
 
     _webServer.on("/api/config", HTTP_POST, [this]() {
@@ -314,10 +409,46 @@ void NetworkManager::begin(const char* ssid, const char* password) {
         _webServer.send(200, "text/plain; charset=utf-8", DeviceLog::snapshot());
     });
     _webServer.on("/api/status", HTTP_GET, [this]() {
-        String body = "{\"connected\":" + String(_connected ? "true" : "false") +
-                      ",\"ip\":\"" + WiFi.localIP().toString() +
-                      "\",\"scan_count\":" + String(_scanCount) + "}";
+        JsonDocument doc;
+        doc["connected"] = _connected;
+        doc["ip"] = WiFi.localIP().toString();
+#if defined(BOARD_JC3248W535EN)
+        doc["hostname"] = _mdnsHostname + ".local";
+        doc["portalUrl"] = "http://" + _mdnsHostname + ".local/";
+#endif
+        doc["rssi"] = _connected ? WiFi.RSSI() : 0;
+        doc["scan_count"] = _scanCount;
+        doc["firmwareVersion"] = DESK_FIRMWARE_VERSION;
+        JsonObject ota = doc["ota"].to<JsonObject>();
+        ota["protocol"] = "arduino-ota";
+        ota["authenticated"] =
+#if defined(DESK_OTA_PASSWORD)
+            true;
+#else
+            false;
+#endif
+        ota["productionReady"] = false;
+        String body;
+        serializeJson(doc, body);
         _webServer.send(200, "application/json", body);
+    });
+
+    _webServer.on("/api/firmware", HTTP_GET, [this]() {
+        JsonDocument doc;
+        doc["schemaVersion"] = 1;
+        doc["version"] = DESK_FIRMWARE_VERSION;
+        doc["transport"] = "arduino-ota";
+        doc["authenticated"] =
+#if defined(DESK_OTA_PASSWORD)
+            true;
+#else
+            false;
+#endif
+        doc["productionReady"] = false;
+        doc["requires"] = "signed A/B image, checksum, health check and rollback before internet deployment";
+        String body;
+        serializeJson(doc, body);
+        _webServer.send(200, "application/json; charset=utf-8", body);
     });
     _webServer.begin();
     LOG_INFO("HTTP log server ready on port 80");
@@ -363,9 +494,27 @@ void NetworkManager::handle() {
                     _connecting = false;
                 }
                 LOG_INFO("WiFi connected, IP=%s, RSSI=%d", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+#if defined(BOARD_JC3248W535EN)
+                if (!_mdnsStarted && _mdnsHostname.length() > 0) {
+                    if (MDNS.begin(_mdnsHostname.c_str())) {
+                        MDNS.addService("http", "tcp", 80);
+                        _mdnsStarted = true;
+                        LOG_INFO("mDNS portal available at http://%s.local/", _mdnsHostname.c_str());
+                    } else {
+                        LOG_ERROR("mDNS start failed for %s", _mdnsHostname.c_str());
+                    }
+                }
+#endif
+                ProvisioningManager::getInstance().onWifiConnected();
                 AppManager::getInstance().setWifiStatus(true, WiFi.RSSI());
             } else {
                 LOG_INFO("WiFi disconnected");
+#if defined(BOARD_JC3248W535EN)
+                if (_mdnsStarted) {
+                    MDNS.end();
+                    _mdnsStarted = false;
+                }
+#endif
                 AppManager::getInstance().setWifiStatus(false);
             }
         }

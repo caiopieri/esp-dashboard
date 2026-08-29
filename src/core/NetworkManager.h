@@ -49,4 +49,8 @@ private:
     bool _wifiConnectRequested = false;
     String _requestedSSID;
     String _requestedPassword;
+#if defined(BOARD_JC3248W535EN)
+    String _mdnsHostname;
+    bool _mdnsStarted = false;
+#endif
 };

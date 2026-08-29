@@ -3,6 +3,7 @@
 #include "App.h"
 #include "DataStore.h"
 #include "VariableStore.h"
+#include "ActionEventStore.h"
 #include <ArduinoJson.h>
 #include <stdlib.h>
 #include <time.h>
@@ -63,6 +64,17 @@ public:
             lv_chart_set_range(_chart, LV_CHART_AXIS_PRIMARY_Y, 0, _maxValue);
             _series = lv_chart_add_series(_chart, lv_color_hex(_accent), LV_CHART_AXIS_PRIMARY_Y);
         }
+#if defined(BOARD_JC3248W535EN)
+        if (_actionId.length() > 0) {
+            lv_obj_t* actionButton = lv_btn_create(_root);
+            lv_obj_set_size(actionButton, _layout.scaled(92), _layout.scaled(24));
+            lv_obj_align(actionButton, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+            lv_obj_add_event_cb(actionButton, onActionClicked, LV_EVENT_CLICKED, this);
+            lv_obj_t* actionLabel = lv_label_create(actionButton);
+            lv_label_set_text(actionLabel, _actionLabel.c_str());
+            lv_obj_center(actionLabel);
+        }
+#endif
         refresh();
     }
 
@@ -97,6 +109,11 @@ private:
         _label = body["label"] | "";
         _unit = body["unit"] | "";
         _maxValue = max(1, body["max"] | 100);
+#if defined(BOARD_JC3248W535EN)
+        JsonObject action = doc["action"].as<JsonObject>();
+        _actionId = action["id"] | "";
+        _actionLabel = action["label"] | "Executar";
+#endif
         for (const char* item : body["items"].as<JsonArray>()) {
             if (_items.length() > 0) _items += "\n";
             _items += item;
@@ -150,8 +167,18 @@ private:
         lv_label_set_text(_detail, detail.c_str());
     }
 
+#if defined(BOARD_JC3248W535EN)
+    static void onActionClicked(lv_event_t* event) {
+        auto* app = static_cast<DeclarativeCardApp*>(lv_event_get_user_data(event));
+        if (app) ActionEventStore::getInstance().publish(app->_actionId.c_str());
+    }
+#endif
+
     String _id, _title, _type, _source, _namespaceName, _key;
     String _staticValue, _label, _unit, _items;
+#if defined(BOARD_JC3248W535EN)
+    String _actionId, _actionLabel;
+#endif
     uint32_t _accent = 0x24243A;
     int _maxValue = 100;
     AppCardLayout _layout;

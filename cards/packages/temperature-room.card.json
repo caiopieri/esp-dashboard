@@ -1,0 +1,32 @@
+{
+  "packageVersion": 1,
+  "kind": "desk-assistant-card",
+  "minimumSchemaVersion": 1,
+  "compatibility": {
+    "displays": ["320x240", "480x320", "e-ink"]
+  },
+  "card": {
+    "schemaVersion": 1,
+    "id": "temperature_room",
+    "title": "Temperatura",
+    "kind": "declarative",
+    "type": "metric",
+    "enabled": true,
+    "deleted": false,
+    "order": 0,
+    "data": {
+      "source": "runtime",
+      "namespace": "room",
+      "key": "temperature",
+      "value": "--"
+    },
+    "body": {
+      "label": "Sala",
+      "unit": "°C",
+      "max": 100
+    },
+    "theme": {
+      "accent": "#74f0c1"
+    }
+  }
+}

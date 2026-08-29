@@ -1,0 +1,19 @@
+{
+  "actions": [
+    {
+      "id": "open_card_studio",
+      "title": "Abrir Card Studio",
+      "kind": "open_url",
+      "url": "http://127.0.0.1:4173/card-studio.html",
+      "allowedHosts": ["127.0.0.1"],
+      "confirmationRequired": true
+    },
+    {
+      "id": "open_terminal",
+      "title": "Abrir terminal",
+      "kind": "launch",
+      "command": ["xterm"],
+      "confirmationRequired": true
+    }
+  ]
+}
